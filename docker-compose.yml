@@ -1,0 +1,31 @@
+services:
+  app:
+    image: ${VALERIAPP_IMAGE:-valeriapp:local}
+    # CI publishes the image and the server only pulls it; `build` is here so
+    # the very first deploy can be done from a checkout with `dist/` present.
+    build: .
+    container_name: valeriapp
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      BACKUP_DIR: /data/backups
+    volumes:
+      - ./backups:/data/backups
+    networks:
+      - shared
+    # No published ports: nginx reaches it over the shared docker network.
+    mem_limit: 320m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+networks:
+  shared:
+    # La red donde ya viven el nginx que hace de proxy y Postgres. Se declara
+    # externa porque la app se acopla a una instalación que ya existe.
+    name: ${VALERIAPP_NETWORK:-valeriapp}
+    external: true

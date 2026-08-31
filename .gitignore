@@ -1,0 +1,29 @@
+node_modules/
+dist/
+dev-dist/
+coverage/
+*.tsbuildinfo
+
+# Secretos: sólo .env.example entra en el repo.
+.env
+.env.*
+!.env.example
+
+# Credenciales sueltas. Nunca deberían caer aquí, pero si caen no se publican.
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Copias de la base de datos: contienen todo lo registrado de la bebé.
+backups/
+*.sql.gz
+*.dump
+
+*.log
+.DS_Store
+._*
+.vscode/
+.idea/
