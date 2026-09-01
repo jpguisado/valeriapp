@@ -20,11 +20,11 @@ export function NightStrip({
   timezone: string
   now: number
 }) {
-  const nightId = activeNightId(events)
-  if (!nightId) return null
+  const sessionId = activeNightId(events)
+  if (!sessionId) return null
 
-  const since = nightStartedAt(events, nightId)
-  const slept = nightSleepSeconds(events, nightId, now)
+  const since = nightStartedAt(events, sessionId)
+  const slept = nightSleepSeconds(events, sessionId, now)
 
   return (
     <section className="night-strip">

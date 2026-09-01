@@ -216,6 +216,34 @@ function sliceByDay(
   return slices
 }
 
+/**
+ * Un intervalo menos los huecos que lo atraviesan.
+ *
+ * Sirve para descontar del sueño los desvelos apuntados encima: durante meses
+ * se registró un sueño largo y, dentro, los ratos que estuvo despierta. Sumar
+ * el sueño en bruto contaba esos ratos como dormidos.
+ */
+export function subtractIntervals(
+  start: number,
+  end: number,
+  holes: Array<{ start: number; end: number }>,
+): Array<{ start: number; end: number }> {
+  let pieces = [{ start, end }]
+  for (const hole of holes) {
+    const next: Array<{ start: number; end: number }> = []
+    for (const piece of pieces) {
+      if (hole.end <= piece.start || hole.start >= piece.end) {
+        next.push(piece)
+        continue
+      }
+      if (hole.start > piece.start) next.push({ start: piece.start, end: hole.start })
+      if (hole.end < piece.end) next.push({ start: hole.end, end: piece.end })
+    }
+    pieces = next
+  }
+  return pieces.filter((piece) => piece.end > piece.start)
+}
+
 /** Seconds of an interval that fall inside the night window, in `tz`. */
 function nightSecondsOf(startTs: number, endTs: number, tz: string): number {
   let night = 0
@@ -246,6 +274,12 @@ export function computeDailyStats(
   for (const key of dayKeysBetween(from, to)) days.set(key, emptyDay(key))
 
   const touch = (key: DayKey): DailyStats | null => days.get(key) ?? null
+
+  // Los desvelos abren huecos en el sueño que los abarca.
+  const wakeups = liveEvents(events)
+    .filter((event) => event.type === 'wakeup')
+    .map((event) => ({ start: toInstant(event.occurredAt), end: effectiveEnd(event, now) }))
+    .filter((range) => range.end > range.start)
 
   for (const event of liveEvents(events)) {
     const tz = zoneFor(event.tz, options.timezone)
@@ -291,20 +325,23 @@ export function computeDailyStats(
       case 'sleep': {
         const endTs = effectiveEnd(event, now)
         if (day) day.sleepSessions += 1
-        for (const slice of sliceByDay(startTs, endTs, tz)) {
-          const target = touch(slice.dayKey)
-          if (!target) continue
-          const nightMinutes = minutesOverlappingNight(slice.startMinute, slice.endMinute)
-          target.sleepSeconds += slice.seconds
-          target.nightSleepSeconds += nightMinutes * 60
-          target.daySleepSeconds += Math.max(0, slice.seconds - nightMinutes * 60)
-          target.sleepBands.push({
-            startMinute: slice.startMinute,
-            endMinute: slice.endMinute,
-            running: event.running,
-            estimated: event.estimated,
-          })
-          if (event.estimated) target.hasEstimates = true
+        // Lo que se apuntó como desvelo no es sueño, aunque caiga dentro.
+        for (const awake of subtractIntervals(startTs, endTs, wakeups)) {
+          for (const slice of sliceByDay(awake.start, awake.end, tz)) {
+            const target = touch(slice.dayKey)
+            if (!target) continue
+            const nightMinutes = minutesOverlappingNight(slice.startMinute, slice.endMinute)
+            target.sleepSeconds += slice.seconds
+            target.nightSleepSeconds += nightMinutes * 60
+            target.daySleepSeconds += Math.max(0, slice.seconds - nightMinutes * 60)
+            target.sleepBands.push({
+              startMinute: slice.startMinute,
+              endMinute: slice.endMinute,
+              running: event.running,
+              estimated: event.estimated,
+            })
+            if (event.estimated) target.hasEstimates = true
+          }
         }
         break
       }
@@ -361,13 +398,22 @@ export function computeNights(
   options: Options,
   now: number = Date.now(),
 ): NightStats[] {
+  const wakeups = liveEvents(events)
+    .filter((e) => e.type === 'wakeup')
+    .map((e) => ({ start: toInstant(e.occurredAt), end: effectiveEnd(e, now) }))
+    .filter((range) => range.end > range.start)
+
+  // Un tramo por trozo realmente dormido: el desvelo apuntado dentro de un
+  // sueño lo parte, igual que lo haría una pausa.
   const sleeps = liveEvents(events)
     .filter((e) => e.type === 'sleep')
-    .map((e) => ({
-      start: toInstant(e.occurredAt),
-      end: effectiveEnd(e, now),
-      tz: zoneFor(e.tz, options.timezone),
-    }))
+    .flatMap((e) =>
+      subtractIntervals(toInstant(e.occurredAt), effectiveEnd(e, now), wakeups).map((piece) => ({
+        start: piece.start,
+        end: piece.end,
+        tz: zoneFor(e.tz, options.timezone),
+      })),
+    )
     .sort((a, b) => a.start - b.start)
 
   return dayKeysBetween(from, to).map((dayKey) => {

@@ -143,7 +143,7 @@ export function Home() {
         <DayRing events={events} timezone={timezone} now={now} />
       )}
 
-      <RunningTimers events={events} timezone={timezone} now={now} />
+      <RunningTimers events={events} timezone={timezone} now={now} createdBy={user?.id ?? ''} />
 
       <Timeline
         events={events}

@@ -76,8 +76,16 @@ export const payloadSchemas = {
   }),
   sleep: z.object({
     place: z.enum(['crib', 'arms', 'stroller', 'bed', 'car', 'other']).optional(),
-    /** Agrupa los tramos de una misma noche del modo "A dormir". */
-    nightId: z.string().optional(),
+    /**
+     * Agrupa los tramos de una misma sesión de sueño partida por pausas. No
+     * es "la noche": una siesta de la mañana se interrumpe igual.
+     */
+    sessionId: z.string().optional(),
+    /**
+     * Este tramo se cerró con una pausa, no con un final: la sesión sigue
+     * abierta y se puede reanudar. Un sueño terminado no lo lleva.
+     */
+    paused: z.boolean().optional(),
     /** Deducido por la app; deja de serlo al dar los buenos días. */
     inferred: z.boolean().optional(),
     /**
@@ -405,6 +413,74 @@ export function finishBreastPayload(
     leftSeconds,
     rightSeconds,
   }
+}
+
+/* ---------------------------------------------------------------- sueño --- */
+
+/**
+ * Pausar un sueño cierra el tramo en curso; reanudarlo abre otro con el mismo
+ * identificador de sesión. Se guardan tramos, y no un evento con agujeros,
+ * porque así el anillo de 24 h y la gráfica por horas siguen leyendo intervalos
+ * continuos: lo que se dibuja como sueño es sueño.
+ *
+ * Vale igual para la noche que para una siesta partida de media mañana.
+ */
+export function isSleepPaused(event: Pick<BabyEvent, 'type' | 'payload' | 'running'>): boolean {
+  if (event.type !== 'sleep' || event.running) return false
+  return (event.payload as { paused?: unknown }).paused === true
+}
+
+/** El tramo pausado que sigue esperando a que la reanuden, si lo hay. */
+export function pausedSleep(events: BabyEvent[]): BabyEvent | null {
+  let best: BabyEvent | null = null
+  for (const event of events) {
+    if (event.deletedAt || !isSleepPaused(event)) continue
+    if (!best || Date.parse(event.endedAt ?? event.occurredAt) > Date.parse(best.endedAt ?? best.occurredAt)) {
+      best = event
+    }
+  }
+  if (!best) return null
+  // Si después del tramo pausado ya hay otro sueño de la misma sesión, la
+  // pausa se reanudó: lo que manda es el último tramo.
+  const session = sessionIdOf(best)
+  const cerrado = events.some(
+    (e) =>
+      !e.deletedAt &&
+      e.type === 'sleep' &&
+      e.id !== best?.id &&
+      sessionIdOf(e) === session &&
+      Date.parse(e.occurredAt) >= Date.parse(best?.endedAt ?? best?.occurredAt ?? ''),
+  )
+  return cerrado ? null : best
+}
+
+export function sessionIdOf(event: Pick<BabyEvent, 'payload'>): string | null {
+  const value = (event.payload as { sessionId?: unknown }).sessionId
+  return typeof value === 'string' ? value : null
+}
+
+/** Cierra el tramo por pausa, asegurando que la sesión tenga identificador. */
+export function pauseSleepPayload(
+  event: Pick<BabyEvent, 'id' | 'payload'>,
+): PayloadOf<'sleep'> {
+  const previous = (event.payload ?? {}) as PayloadOf<'sleep'>
+  return { ...previous, sessionId: sessionIdOf(event) ?? event.id, paused: true }
+}
+
+/** El payload del tramo nuevo al reanudar: misma sesión, sin marca de pausa. */
+export function resumeSleepPayload(previous: BabyEvent): PayloadOf<'sleep'> {
+  const anterior = (previous.payload ?? {}) as PayloadOf<'sleep'>
+  return {
+    ...anterior,
+    sessionId: sessionIdOf(previous) ?? previous.id,
+    paused: undefined,
+  }
+}
+
+/** Cierra la sesión entera: el tramo pausado deja de estarlo. */
+export function closeSleepPayload(previous: BabyEvent): PayloadOf<'sleep'> {
+  const anterior = (previous.payload ?? {}) as PayloadOf<'sleep'>
+  return { ...anterior, paused: undefined }
 }
 
 function round(seconds: number): number {

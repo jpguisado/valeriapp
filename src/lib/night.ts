@@ -10,7 +10,7 @@ import {
   activeNightId,
   awaitingOf,
   interruptsNight,
-  nightIdOf,
+  sleepSessionId,
   planNightAdjustment,
   runningNightSleep,
   segmentAwaiting,
@@ -32,7 +32,7 @@ function newSleep(
   babyId: string,
   createdBy: string,
   at: number,
-  nightId: string,
+  sessionId: string,
   id?: string,
 ): StoredEvent {
   const stamp = new Date().toISOString()
@@ -45,7 +45,7 @@ function newSleep(
     tz: deviceTimezone(),
     running: true,
     estimated: false,
-    payload: { nightId, inferred: true },
+    payload: { sessionId, inferred: true },
     note: null,
     createdBy,
     createdAt: stamp,
@@ -62,17 +62,17 @@ export async function startNight(babyId: string, createdBy: string): Promise<voi
     return
   }
 
-  const nightId = crypto.randomUUID()
+  const sessionId = crypto.randomUUID()
   // Si ya había una siesta corriendo, se adopta: es la misma bebé durmiendo.
   const ongoing = events.find((event) => event.type === 'sleep' && event.running)
   try {
     if (ongoing) {
       await saveEvent({
         ...ongoing,
-        payload: { ...(ongoing.payload as object), nightId, inferred: true },
+        payload: { ...(ongoing.payload as object), sessionId, inferred: true },
       })
     } else {
-      await saveEvent(newSleep(babyId, createdBy, Date.now(), nightId))
+      await saveEvent(newSleep(babyId, createdBy, Date.now(), sessionId))
     }
   } catch {
     announceFailure('No se pudo empezar la noche')
@@ -84,11 +84,11 @@ export async function startNight(babyId: string, createdBy: string): Promise<voi
 /** Cierra la noche y da por buenos todos sus tramos. */
 export async function endNight(babyId: string): Promise<void> {
   const events = await eventsOf(babyId)
-  const nightId = activeNightId(events)
-  if (!nightId) return
+  const sessionId = activeNightId(events)
+  if (!sessionId) return
 
   const now = Date.now()
-  for (const segment of segmentsOfNight(events, nightId)) {
+  for (const segment of segmentsOfNight(events, sessionId)) {
     const payload = { ...(segment.payload as Record<string, unknown>) }
     delete payload.inferred
     delete payload.awaiting
@@ -126,7 +126,7 @@ export async function reconcileNight(event: BabyEvent, settleMinutes: number): P
           event.babyId,
           event.createdBy,
           plan.resumeAt,
-          nightIdOf(waiting) as string,
+          sleepSessionId(waiting) as string,
           plan.nextId,
         ),
       )
@@ -141,7 +141,7 @@ export async function reconcileNight(event: BabyEvent, settleMinutes: number): P
   const plan = planNightAdjustment(sleeping, event, settleMinutes)
   if (!plan) return
 
-  const nightId = nightIdOf(sleeping) as string
+  const sessionId = sleepSessionId(sleeping) as string
   const payload = { ...(sleeping.payload as Record<string, unknown>) }
   if (plan.resumeAt === null) payload.awaiting = event.id
 
@@ -154,9 +154,9 @@ export async function reconcileNight(event: BabyEvent, settleMinutes: number): P
 
   if (plan.resumeAt !== null) {
     await saveEvent(
-      newSleep(event.babyId, event.createdBy, plan.resumeAt, nightId, plan.nextId),
+      newSleep(event.babyId, event.createdBy, plan.resumeAt, sessionId, plan.nextId),
     )
   }
 }
 
-export { activeNightId, awaitingOf, nightIdOf }
+export { activeNightId, awaitingOf, sleepSessionId }

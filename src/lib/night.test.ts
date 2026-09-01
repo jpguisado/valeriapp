@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BabyEvent } from '@shared/events'
-import { activeNightId, nightIdOf } from '@shared/night'
+import { activeNightId, sleepSessionId } from '@shared/night'
 import { db } from './db'
 import { endNight, startNight } from './night'
 import { newEvent, saveEvent } from './sync'
@@ -32,7 +32,7 @@ describe('el modo «A dormir»', () => {
     await startNight(BABY, USER)
     const [sleep] = await sleeps()
     expect(sleep?.running).toBe(true)
-    expect(nightIdOf(sleep as BabyEvent)).toBeTruthy()
+    expect(sleepSessionId(sleep as BabyEvent)).toBeTruthy()
     expect((sleep?.payload as { inferred?: boolean }).inferred).toBe(true)
   })
 
@@ -44,7 +44,7 @@ describe('el modo «A dormir»', () => {
     const all = await sleeps()
     expect(all).toHaveLength(1)
     expect(all[0]?.id).toBe(nap.id)
-    expect(nightIdOf(all[0] as BabyEvent)).toBeTruthy()
+    expect(sleepSessionId(all[0] as BabyEvent)).toBeTruthy()
   })
 
   it('no abre dos noches a la vez', async () => {
@@ -84,7 +84,7 @@ describe('el modo «A dormir»', () => {
     expect(resumed.running).toBe(true)
     // 30 minutos de toma más los 25 de rutina por defecto.
     expect(Date.parse(resumed.occurredAt)).toBe(feedEnd + 25 * 60_000)
-    expect(nightIdOf(resumed)).toBe(nightIdOf(all[0] as BabyEvent))
+    expect(sleepSessionId(resumed)).toBe(sleepSessionId(all[0] as BabyEvent))
   })
 
   it('un evento instantáneo corta y reanuda de una vez', async () => {

@@ -1,10 +1,13 @@
 import {
+  closeSleepPayload,
   finishBreastPayload,
   isBreastPaused,
   isTimedType,
   pauseBreastPayload,
+  pauseSleepPayload,
   reopenBreastPayload,
   resumeBreastPayload,
+  resumeSleepPayload,
   startBreastPayload,
   switchBreastPayload,
   withShiftedStart,
@@ -88,6 +91,65 @@ export async function resumeFeed(event: BabyEvent, at: number = Date.now()): Pro
   if (event.type !== 'breast' || !event.running || !isBreastPaused(event)) return
   await saveEvent({ ...event, payload: resumeBreastPayload(event, at) })
   announcePaused(false)
+}
+
+/**
+ * Se ha despertado a mitad del sueño. El tramo se cierra aquí y la sesión
+ * queda abierta: lo que venga después es otro tramo de lo mismo, no un sueño
+ * nuevo. Sirve igual de noche que en una siesta.
+ */
+export async function pauseSleep(
+  event: BabyEvent,
+  at: number = Date.now(),
+): Promise<void> {
+  if (event.type !== 'sleep' || !event.running) return
+  try {
+    await saveEvent({
+      ...event,
+      running: false,
+      estimated: false,
+      endedAt: new Date(at).toISOString(),
+      payload: pauseSleepPayload(event),
+    })
+  } catch {
+    announceFailure()
+    return
+  }
+  announcePaused(true)
+}
+
+/** Se ha vuelto a dormir: tramo nuevo, misma sesión. */
+export async function resumeSleep(
+  paused: BabyEvent,
+  createdBy: string,
+  at: number = Date.now(),
+): Promise<void> {
+  const tramo = newEvent({
+    babyId: paused.babyId,
+    type: 'sleep',
+    running: true,
+    createdBy,
+    payload: resumeSleepPayload(paused),
+  })
+  tramo.occurredAt = new Date(at).toISOString()
+  try {
+    await saveEvent(tramo)
+    // El tramo anterior deja de estar "en pausa": ya se reanudó.
+    await saveEvent({ ...paused, payload: closeSleepPayload(paused) })
+  } catch {
+    announceFailure()
+    return
+  }
+  announcePaused(false)
+}
+
+/** Se acabó la siesta o la noche: la sesión se cierra sin reanudar nada. */
+export async function endSleepSession(paused: BabyEvent): Promise<void> {
+  try {
+    await saveEvent({ ...paused, payload: closeSleepPayload(paused) })
+  } catch {
+    announceFailure()
+  }
 }
 
 /** Baby moved to the other breast: same feed, new segment. */

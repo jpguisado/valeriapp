@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isSleepPaused,
+  pauseSleepPayload,
+  pausedSleep,
+  resumeSleepPayload,
   breastFeedingSeconds,
   breastSplit,
   finishBreastPayload,
@@ -320,5 +324,58 @@ describe('lactancia mixta', () => {
     expect(finished.supplementMl).toBe(60)
     expect(finished.supplementKind).toBe('formula')
     expect(finished.leftSeconds).toBe(720)
+  })
+})
+
+describe('pausar el sueño', () => {
+  const sueño = (over: Partial<BabyEvent> = {}): BabyEvent =>
+    ({
+      id: 's1',
+      babyId: 'b1',
+      type: 'sleep',
+      occurredAt: '2026-09-01T01:19:00.000Z',
+      endedAt: null,
+      running: true,
+      estimated: false,
+      payload: {},
+      deletedAt: null,
+      ...over,
+    }) as unknown as BabyEvent
+
+  it('la pausa estrena identificador de sesión con el id del primer tramo', () => {
+    const payload = pauseSleepPayload(sueño())
+    expect(payload.sessionId).toBe('s1')
+    expect(payload.paused).toBe(true)
+  })
+
+  it('al reanudar, el tramo nuevo hereda la sesión y no queda en pausa', () => {
+    const primero = sueño({
+      running: false,
+      endedAt: '2026-09-01T03:15:00.000Z',
+      payload: { sessionId: 's1', paused: true },
+    })
+    const payload = resumeSleepPayload(primero)
+    expect(payload.sessionId).toBe('s1')
+    expect(payload.paused).toBeUndefined()
+  })
+
+  it('un tramo pausado se ve; uno ya reanudado, no', () => {
+    const primero = sueño({
+      running: false,
+      endedAt: '2026-09-01T03:15:00.000Z',
+      payload: { sessionId: 's1', paused: true },
+    })
+    expect(pausedSleep([primero])?.id).toBe('s1')
+
+    const segundo = sueño({
+      id: 's2',
+      occurredAt: '2026-09-01T04:25:00.000Z',
+      payload: { sessionId: 's1' },
+    })
+    expect(pausedSleep([primero, segundo])).toBeNull()
+  })
+
+  it('un sueño en curso no está en pausa', () => {
+    expect(isSleepPaused(sueño())).toBe(false)
   })
 })

@@ -48,21 +48,21 @@ export function derivedEventId(sourceId: string): string {
 
 export interface NightSegment {
   event: BabyEvent
-  nightId: string
+  sessionId: string
 }
 
 /** El tramo de sueño abierto de una noche en marcha, si lo hay. */
 export function runningNightSleep(events: BabyEvent[]): BabyEvent | null {
   for (const event of events) {
     if (event.deletedAt || event.type !== 'sleep' || !event.running) continue
-    if (nightIdOf(event)) return event
+    if (sleepSessionId(event)) return event
   }
   return null
 }
 
-export function nightIdOf(event: BabyEvent): string | null {
+export function sleepSessionId(event: BabyEvent): string | null {
   if (event.type !== 'sleep') return null
-  const value = (event.payload as { nightId?: unknown }).nightId
+  const value = (event.payload as { sessionId?: unknown }).sessionId
   return typeof value === 'string' ? value : null
 }
 
@@ -84,11 +84,11 @@ export function activeNightId(events: BabyEvent[]): string | null {
   let best: BabyEvent | null = null
   for (const event of events) {
     if (event.deletedAt || event.type !== 'sleep') continue
-    if (!nightIdOf(event)) continue
+    if (!sleepSessionId(event)) continue
     if (!event.running && !awaitingOf(event)) continue
     if (!best || toInstant(event.occurredAt) > toInstant(best.occurredAt)) best = event
   }
-  return best ? nightIdOf(best) : null
+  return best ? sleepSessionId(best) : null
 }
 
 /** El tramo que espera a que termine un evento concreto. */
@@ -101,8 +101,8 @@ export function segmentAwaiting(events: BabyEvent[], wakingId: string): BabyEven
 }
 
 /** Cuándo empezó la noche: el primero de sus tramos. */
-export function nightStartedAt(events: BabyEvent[], nightId: string): number | null {
-  const segments = segmentsOfNight(events, nightId)
+export function nightStartedAt(events: BabyEvent[], sessionId: string): number | null {
+  const segments = segmentsOfNight(events, sessionId)
   const first = segments[0]
   return first ? toInstant(first.occurredAt) : null
 }
@@ -110,11 +110,11 @@ export function nightStartedAt(events: BabyEvent[], nightId: string): number | n
 /** Lo que ha dormido en la noche, tramos abiertos incluidos. */
 export function nightSleepSeconds(
   events: BabyEvent[],
-  nightId: string,
+  sessionId: string,
   now: number = Date.now(),
 ): number {
   let seconds = 0
-  for (const segment of segmentsOfNight(events, nightId)) {
+  for (const segment of segmentsOfNight(events, sessionId)) {
     const from = toInstant(segment.occurredAt)
     const to = segment.endedAt ? toInstant(segment.endedAt) : segment.running ? now : from
     seconds += Math.max(0, (to - from) / 1000)
@@ -123,9 +123,9 @@ export function nightSleepSeconds(
 }
 
 /** Todos los tramos de una noche, en orden. */
-export function segmentsOfNight(events: BabyEvent[], nightId: string): BabyEvent[] {
+export function segmentsOfNight(events: BabyEvent[], sessionId: string): BabyEvent[] {
   return events
-    .filter((event) => !event.deletedAt && nightIdOf(event) === nightId)
+    .filter((event) => !event.deletedAt && sleepSessionId(event) === sessionId)
     .sort((a, b) => toInstant(a.occurredAt) - toInstant(b.occurredAt))
 }
 

@@ -4,6 +4,7 @@ import {
   breastFeedingSeconds,
   breastSplit,
   isBreastPaused,
+  pausedSleep,
   payloadOf,
   type BabyEvent,
 } from '@shared/events'
@@ -11,7 +12,15 @@ import { computeDailyStats, type DailyStats } from '@shared/stats'
 import { dayKeyOf, type TimezoneSetting } from '@shared/time'
 import { clock, duration, hours, liveDuration, ml } from '@/lib/format'
 import { useNow } from '@/lib/hooks'
-import { pauseFeed, resumeFeed, stopTimer, switchSide } from '@/lib/timers'
+import {
+  endSleepSession,
+  pauseFeed,
+  pauseSleep,
+  resumeFeed,
+  resumeSleep,
+  stopTimer,
+  switchSide,
+} from '@/lib/timers'
 import { EVENT_ACCENTS } from './event-meta'
 import { CircleStop, EventIcon, Pause, Pencil, Play, Repeat } from './icons'
 import { StartTimeSheet } from './StartTimeSheet'
@@ -20,14 +29,19 @@ interface Props {
   events: BabyEvent[]
   timezone: TimezoneSetting
   now: number
+  createdBy: string
 }
 
 /**
  * Live controls for whatever is running right now. Shown on every device of
  * the household, so either parent can switch sides, pause or stop.
  */
-export function RunningTimers({ events, timezone, now }: Props) {
+export function RunningTimers({ events, timezone, now, createdBy }: Props) {
   const running = events.filter((event) => event.running)
+  // Un sueño en pausa no está "en curso", pero tiene que seguir a la vista:
+  // es lo único desde donde se reanuda.
+  const dormida = running.some((event) => event.type === 'sleep')
+  const enPausa = dormida ? null : pausedSleep(events)
 
   // Only tick every second while something short is running; a three-hour nap
   // shows minutes, and redrawing it 3600 times would buy nothing.
@@ -43,10 +57,18 @@ export function RunningTimers({ events, timezone, now }: Props) {
     [events, today, timezone, Math.floor(tick / 30_000)],
   )
 
-  if (running.length === 0) return null
+  if (running.length === 0 && !enPausa) return null
 
   return (
     <div className="col">
+      {enPausa && (
+        <PausedSleepCard
+          event={enPausa}
+          createdBy={createdBy}
+          timezone={timezone}
+          now={tick}
+        />
+      )}
       {running.map((event) => (
         <RunningCard
           key={event.id}
@@ -168,6 +190,12 @@ function RunningCard({
         </div>
       )}
 
+      {event.type === 'sleep' && (
+        <button className="btn block" onClick={() => void pauseSleep(event)}>
+          <Pause size={17} /> Se ha despertado
+        </button>
+      )}
+
       <button className="btn primary block" onClick={() => void stopTimer(event, { events, timezone, now })}>
         <CircleStop size={18} /> Parar
       </button>
@@ -180,6 +208,62 @@ function RunningCard({
           onClose={() => setEditingStart(false)}
         />
       )}
+    </section>
+  )
+}
+
+/**
+ * El sueño en pausa. No hay reloj corriendo —lo que corre es el rato que lleva
+ * despierta— y las dos salidas son explícitas: se volvió a dormir, o ya está.
+ */
+function PausedSleepCard({
+  event,
+  createdBy,
+  timezone,
+  now,
+}: {
+  event: BabyEvent
+  createdBy: string
+  timezone: TimezoneSetting
+  now: number
+}) {
+  const tz = timezone.fixed
+  const desde = Date.parse(event.endedAt ?? event.occurredAt)
+  const despierta = Math.max(0, (now - desde) / 1000)
+
+  return (
+    <section
+      className="card col running-card"
+      style={{ ['--accent' as string]: EVENT_ACCENTS.sleep }}
+      aria-label="Sueño en pausa"
+    >
+      <div className="row between" style={{ alignItems: 'flex-start' }}>
+        <div className="row" style={{ gap: 12 }}>
+          <span className="bullet">
+            <EventIcon type="sleep" size={20} />
+          </span>
+          <div className="col" style={{ gap: 1 }}>
+            <h2>Sueño en pausa</h2>
+            <span className="tiny faint">despierta desde las {clock(desde, tz)}</span>
+          </div>
+        </div>
+        <div className="col" style={{ gap: 4, alignItems: 'flex-end' }}>
+          <span className="badge">en pausa</span>
+          <span className="running-time">{liveDuration(despierta)}</span>
+        </div>
+      </div>
+
+      <div className="row">
+        <button
+          className="btn primary grow"
+          onClick={() => void resumeSleep(event, createdBy)}
+        >
+          <Play size={17} /> Se ha dormido
+        </button>
+        <button className="btn grow" onClick={() => void endSleepSession(event)}>
+          <CircleStop size={17} /> Ya está despierta
+        </button>
+      </div>
     </section>
   )
 }

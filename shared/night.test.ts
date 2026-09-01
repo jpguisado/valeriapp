@@ -4,7 +4,7 @@ import {
   DEFAULT_SETTLE_MINUTES,
   derivedEventId,
   interruptsNight,
-  nightIdOf,
+  sleepSessionId,
   planNightAdjustment,
   runningNightSleep,
   segmentsOfNight,
@@ -75,7 +75,7 @@ describe('identificadores deterministas', () => {
 })
 
 describe('el corte del sueño', () => {
-  const sleep = event('sleep', 0, { running: true, payload: { nightId: 'n1', inferred: true } })
+  const sleep = event('sleep', 0, { running: true, payload: { sessionId: 'n1', inferred: true } })
 
   it('cierra al empezar el evento y reanuda tras la cola', () => {
     const feed = event('breast', 60, { endedAt: new Date(START + 85 * 60_000).toISOString() })
@@ -112,15 +112,15 @@ describe('el corte del sueño', () => {
 describe('la noche en marcha', () => {
   it('la reconoce por el tramo abierto con su noche', () => {
     const suelto = event('sleep', 0, { running: true })
-    const deNoche = event('sleep', 10, { running: true, payload: { nightId: 'n1' } })
+    const deNoche = event('sleep', 10, { running: true, payload: { sessionId: 'n1' } })
     expect(runningNightSleep([suelto])).toBeNull()
-    expect(nightIdOf(runningNightSleep([suelto, deNoche]) as BabyEvent)).toBe('n1')
+    expect(sleepSessionId(runningNightSleep([suelto, deNoche]) as BabyEvent)).toBe('n1')
   })
 
   it('agrupa los tramos de una noche en orden', () => {
-    const a = event('sleep', 120, { payload: { nightId: 'n1' } })
-    const b = event('sleep', 0, { payload: { nightId: 'n1' } })
-    const otra = event('sleep', 60, { payload: { nightId: 'n2' } })
+    const a = event('sleep', 120, { payload: { sessionId: 'n1' } })
+    const b = event('sleep', 0, { payload: { sessionId: 'n1' } })
+    const otra = event('sleep', 60, { payload: { sessionId: 'n2' } })
     expect(segmentsOfNight([a, b, otra], 'n1').map((e) => e.id)).toEqual([b.id, a.id])
   })
 

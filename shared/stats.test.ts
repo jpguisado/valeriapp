@@ -340,3 +340,65 @@ describe('el avance del peso', () => {
     expect(weightProgress([])).toBeNull()
   })
 })
+
+describe('el desvelo apuntado dentro de un sueño', () => {
+  const evento = (
+    type: 'sleep' | 'wakeup',
+    from: string,
+    to: string,
+  ): BabyEvent =>
+    ({
+      id: `${type}-${from}`,
+      babyId: 'b1',
+      type,
+      occurredAt: `${from}:00.000Z`,
+      endedAt: `${to}:00.000Z`,
+      running: false,
+      estimated: false,
+      payload: {},
+      tz: 'UTC',
+      deletedAt: null,
+    }) as unknown as BabyEvent
+
+  // El caso real de la noche del 31 de agosto: un sueño de 419 minutos con
+  // dos desvelos apuntados encima que sumaban 149.
+  it('no cuenta como dormido el rato que se apuntó despierta', () => {
+    const events = [
+      evento('sleep', '2026-09-01T01:19', '2026-09-01T08:18'),
+      evento('wakeup', '2026-09-01T03:15', '2026-09-01T04:25'),
+      evento('wakeup', '2026-09-01T07:00', '2026-09-01T08:30'),
+    ]
+    const [dia] = computeDailyStats(events, '2026-09-01', '2026-09-01', {
+      timezone: { mode: 'fixed', fixed: 'UTC' },
+    })
+    // 419 − 70 (03:15-04:25) − 78 (07:00 hasta el final del sueño) = 271.
+    expect(Math.round((dia?.sleepSeconds ?? 0) / 60)).toBe(271)
+  })
+
+  it('parte la banda en los trozos realmente dormidos', () => {
+    const events = [
+      evento('sleep', '2026-09-01T01:19', '2026-09-01T08:18'),
+      evento('wakeup', '2026-09-01T03:15', '2026-09-01T04:25'),
+      evento('wakeup', '2026-09-01T07:00', '2026-09-01T08:30'),
+    ]
+    const [dia] = computeDailyStats(events, '2026-09-01', '2026-09-01', {
+      timezone: { mode: 'fixed', fixed: 'UTC' },
+    })
+    // Sólo dos: el segundo desvelo se prolonga más allá del final del sueño,
+    // así que no queda nada dormido después de él.
+    expect(dia?.sleepBands.map((b) => [b.startMinute, b.endMinute])).toEqual([
+      [79, 195],
+      [265, 420],
+    ])
+  })
+
+  it('un sueño sin desvelos encima no cambia', () => {
+    const [dia] = computeDailyStats(
+      [evento('sleep', '2026-09-01T01:00', '2026-09-01T03:00')],
+      '2026-09-01',
+      '2026-09-01',
+      { timezone: { mode: 'fixed', fixed: 'UTC' } },
+    )
+    expect(Math.round((dia?.sleepSeconds ?? 0) / 60)).toBe(120)
+  })
+})
