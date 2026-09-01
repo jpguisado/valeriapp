@@ -9,11 +9,17 @@ import {
   type EventType,
 } from '@shared/events'
 import { computeDailyStats } from '@shared/stats'
+import {
+  isDoubtful,
+  isNightWrapper,
+  longestStretchSeconds,
+  nightSleepSeconds,
+} from '@shared/night'
 import { dayKeyOf, zoneFor, type TimezoneSetting } from '@shared/time'
 import { celsius, clock, dayLabel, duration, grams, ml } from '@/lib/format'
 import { resumeSession } from '@/lib/timers'
 import { EVENT_ACCENTS } from './event-meta'
-import { EventIcon, Play } from './icons'
+import { CircleHelp, EventIcon, Moon, Play, Sunrise } from './icons'
 
 interface Props {
   events: BabyEvent[]
@@ -43,8 +49,26 @@ export function Timeline({
   hideDays = false,
   resumableEventId = null,
 }: Props) {
+  // Las noches envuelven a los eventos que caen dentro, cruzando la medianoche.
+  const nights = useMemo(
+    () =>
+      events
+        .filter((event) => !event.deletedAt && isNightWrapper(event))
+        .map((night) => ({
+          night,
+          from: Date.parse(night.occurredAt),
+          to: night.endedAt ? Date.parse(night.endedAt) : now,
+        })),
+    [events, now],
+  )
+  const nightOf = (event: BabyEvent): BabyEvent | null => {
+    const at = Date.parse(event.occurredAt)
+    return nights.find((n) => at >= n.from && at <= n.to)?.night ?? null
+  }
+
   const groups = useMemo(() => {
-    const filtered = filter.length ? events.filter((event) => filter.includes(event.type)) : events
+    const visible = events.filter((event) => !isNightWrapper(event))
+    const filtered = filter.length ? visible.filter((event) => filter.includes(event.type)) : visible
     const byDay = new Map<string, BabyEvent[]>()
     for (const event of filtered) {
       const key = dayKeyOf(event.occurredAt, zoneFor(event.tz, timezone))
@@ -77,8 +101,8 @@ export function Timeline({
               </span>
             </header>
           )}
-          <div className="timeline">
-            {group.events.map((event) => (
+          {runsOf(group.events, nightOf).map((run, index) => {
+            const filas = run.events.map((event) => (
               <EventRow
                 key={event.id}
                 event={event}
@@ -87,8 +111,38 @@ export function Timeline({
                 resumable={event.id === resumableEventId}
                 onSelect={onSelect}
               />
-            ))}
-          </div>
+            ))
+            if (!run.night) {
+              return (
+                <div key={`suelto-${index}`} className="timeline">
+                  {filas}
+                </div>
+              )
+            }
+            const primero = run.events[run.events.length - 1]
+            const ultimo = run.events[0]
+            const abre =
+              !!primero && Date.parse(primero.occurredAt) <= Date.parse(run.night.occurredAt) + 864e5
+              && dayKeyOf(run.night.occurredAt, timezone.fixed) === group.dayKey
+            const cierra =
+              !!ultimo &&
+              (run.night.endedAt
+                ? dayKeyOf(run.night.endedAt, timezone.fixed) === group.dayKey
+                : false)
+            return (
+              <NightWrap
+                key={run.night.id + group.dayKey}
+                night={run.night}
+                events={events}
+                timezone={timezone.fixed}
+                now={now}
+                abre={abre}
+                cierra={cierra}
+              >
+                {filas}
+              </NightWrap>
+            )
+          })}
         </section>
       ))}
     </div>
@@ -106,6 +160,70 @@ function dayCounts(
   const feeds = `${stats.feeds} ${stats.feeds === 1 ? 'toma' : 'tomas'}`
   const diapers = `${stats.diapers.total} ${stats.diapers.total === 1 ? 'pañal' : 'pañales'}`
   return `${feeds} · ${diapers}`
+}
+
+/** Corta los eventos de un día en rachas seguidas dentro o fuera de una noche. */
+function runsOf(
+  events: BabyEvent[],
+  nightOf: (event: BabyEvent) => BabyEvent | null,
+): Array<{ night: BabyEvent | null; events: BabyEvent[] }> {
+  const runs: Array<{ night: BabyEvent | null; events: BabyEvent[] }> = []
+  for (const event of events) {
+    const night = nightOf(event)
+    const last = runs[runs.length - 1]
+    if (last && last.night?.id === night?.id) last.events.push(event)
+    else runs.push({ night, events: [event] })
+  }
+  return runs
+}
+
+/**
+ * El envoltorio de la noche. Se dibuja abierto por abajo mientras la noche
+ * continúa en el día anterior, que es como se lee que una noche no cabe en un
+ * día natural.
+ */
+function NightWrap({
+  night,
+  events,
+  timezone,
+  now,
+  abre,
+  cierra,
+  children,
+}: {
+  night: BabyEvent
+  events: BabyEvent[]
+  timezone: string
+  now: number
+  abre: boolean
+  cierra: boolean
+  children: React.ReactNode
+}) {
+  const slept = nightSleepSeconds(events, night, now)
+  const longest = longestStretchSeconds(events, night, now)
+
+  return (
+    <div className={`night-wrap${abre ? ' abre' : ''}${cierra ? ' cierra' : ''}`}>
+      {cierra && (
+        <header className="night-wrap-edge">
+          <Sunrise size={14} />
+          Ya estamos en pie · {clock(night.endedAt as string, timezone)}
+          <span className="grow" />
+          <span className="mono tiny">
+            {duration(longest)} del tirón · {duration(slept)} est.
+          </span>
+          {isDoubtful(night) && <CircleHelp size={13} aria-label="noche dudosa" />}
+        </header>
+      )}
+      <div className="timeline">{children}</div>
+      {abre && (
+        <footer className="night-wrap-edge">
+          <Moon size={14} />
+          Nos acostamos · {clock(night.occurredAt, timezone)}
+        </footer>
+      )}
+    </div>
+  )
 }
 
 function EventRow({

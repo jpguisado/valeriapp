@@ -2,6 +2,7 @@ import {
   Baby,
   Bell,
   BedDouble,
+  CircleHelp,
   Sunrise,
   CalendarDays,
   ChartColumn,
@@ -75,6 +76,8 @@ export function EventIcon({
 
 export {
   BedDouble,
+  CircleHelp,
+  Moon,
   Sunrise,
   Bell,
   CalendarDays,

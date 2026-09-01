@@ -63,7 +63,7 @@ export function TypePicker({
             </button>
           ))}
 
-          {/* La noche no es un evento: es un modo, y cierra la rejilla. */}
+          {/* La noche no es un evento suelto: envuelve a los demás. */}
           {mode === 'now' && onStartNight && !nightActive && (
             <button
               className="quick"
@@ -73,7 +73,7 @@ export function TypePicker({
               <span className="glyph">
                 <BedDouble size={22} strokeWidth={1.9} aria-hidden="true" />
               </span>
-              <span>A dormir</span>
+              <span>Nos acostamos</span>
             </button>
           )}
         </div>

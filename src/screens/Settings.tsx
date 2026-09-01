@@ -433,7 +433,6 @@ function HouseholdScreen() {
   const [timezoneMode, setTimezoneMode] = useState(household?.timezoneMode ?? 'device')
   const [timezone, setTimezone] = useState(household?.timezone ?? 'Europe/Madrid')
   const [backupEmail, setBackupEmail] = useState(household?.backupEmail ?? '')
-  const [settleMinutes, setSettleMinutes] = useState(household?.settleMinutes ?? 25)
   const [invite, setInvite] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -441,13 +440,11 @@ function HouseholdScreen() {
     setTimezoneMode(household?.timezoneMode ?? 'device')
     setTimezone(household?.timezone ?? 'Europe/Madrid')
     setBackupEmail(household?.backupEmail ?? '')
-    setSettleMinutes(household?.settleMinutes ?? 25)
   }, [
     household?.id,
     household?.timezoneMode,
     household?.timezone,
     household?.backupEmail,
-    household?.settleMinutes,
   ])
 
   async function save(): Promise<void> {
@@ -455,7 +452,6 @@ function HouseholdScreen() {
       timezoneMode,
       timezone,
       backupEmail,
-      settleMinutes,
     })
     setSaved(true)
     await sync()
@@ -480,31 +476,6 @@ function HouseholdScreen() {
             Código <strong className="mono">{invite}</strong> · un solo uso, caduca en 24 horas.
           </p>
         )}
-      </div>
-
-      <div className="card col">
-        <h3>Modo «A dormir»</h3>
-        <p className="tiny faint">
-          Con el modo activo se considera que duerme salvo lo que anotes. Cada evento que
-          la despierta corta el sueño y lo reanuda pasados estos minutos de rutina —
-          biberón, gases, volver a la cuna.
-        </p>
-        <label className="field">
-          Minutos de rutina tras cada evento
-          <input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            max={180}
-            step={5}
-            value={settleMinutes}
-            onChange={(e) => setSettleMinutes(Number(e.target.value))}
-          />
-          <span className="tiny faint">
-            Lo comparten los dos móviles: si cada uno usara un número distinto, los tramos
-            de sueño no coincidirían.
-          </span>
-        </label>
       </div>
 
       <div className="card col">

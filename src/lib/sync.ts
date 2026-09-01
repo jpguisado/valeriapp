@@ -9,10 +9,8 @@
  */
 import { deviceTimezone } from '@shared/time'
 import { normaliseTimedEvent, type BabyEvent } from '@shared/events'
-import { DEFAULT_SETTLE_MINUTES } from '@shared/night'
 import { api, OfflineError } from './api'
 import { db, readMeta, writeMeta, type HouseholdSnapshot, type StoredEvent } from './db'
-import { reconcileNight } from './night'
 
 const CURSOR_KEY = 'cursor'
 const SNAPSHOT_KEY = 'snapshot'
@@ -89,7 +87,6 @@ export async function saveEvent(event: BabyEvent): Promise<void> {
   // La cadena del modo "A dormir" se mantiene aquí, que es por donde pasa todo
   // lo que se escribe, venga del selector, del formulario o de un temporizador.
   const snapshot = await readMeta<HouseholdSnapshot | null>(SNAPSHOT_KEY, null)
-  await reconcileNight(stamped, snapshot?.household?.settleMinutes ?? DEFAULT_SETTLE_MINUTES)
 
   void sync()
 }
