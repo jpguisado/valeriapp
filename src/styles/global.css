@@ -653,6 +653,12 @@ a:focus-visible {
   font-family: 'Outfit', sans-serif;
   font-size: 1.08rem;
   font-weight: 600;
+  /* Con el intervalo completo a la derecha, en una pantalla estrecha el
+     título recorta antes que empujar la hora fuera de la tarjeta. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------------- sheet ---------------- */
@@ -1373,3 +1379,10 @@ a:focus-visible {
   color: var(--text);
 }
 
+
+/* El guion del intervalo, más tenue que las horas: separa sin competir. */
+.event-row .time-dash {
+  margin: 0 3px;
+  color: var(--text-faint);
+  font-weight: 400;
+}

@@ -137,7 +137,17 @@ function EventRow({
         <span className="grow col" style={{ gap: 2 }}>
           <span className="row between" style={{ gap: 10 }}>
             <span className="title">{EVENT_LABELS[event.type]}</span>
-            <span className="time">{clock(event.occurredAt, tz)}</span>
+            <span className="time">
+              {clock(event.occurredAt, tz)}
+              {/* Lo que dura se lee entero: cuándo empezó y cuándo acabó. La
+                  duración sola obliga a sumar de cabeza para situarlo. */}
+              {event.endedAt && !event.running && (
+                <>
+                  <span className="time-dash">–</span>
+                  {clock(event.endedAt, tz)}
+                </>
+              )}
+            </span>
           </span>
           <span className="row between" style={{ gap: 10 }}>
             <span className="small dim">{describe(event, seconds, now)}</span>
