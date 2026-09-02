@@ -1433,3 +1433,21 @@ a:focus-visible {
 .night-wrap-edge .mono {
   color: var(--text-faint);
 }
+
+/* El borde de la noche se toca para corregirlo. */
+.night-wrap-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  min-height: 28px;
+}
+
+.night-wrap-btn svg:last-child {
+  opacity: 0.5;
+}

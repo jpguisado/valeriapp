@@ -19,7 +19,7 @@ import { dayKeyOf, zoneFor, type TimezoneSetting } from '@shared/time'
 import { celsius, clock, dayLabel, duration, grams, ml } from '@/lib/format'
 import { resumeSession } from '@/lib/timers'
 import { EVENT_ACCENTS } from './event-meta'
-import { CircleHelp, EventIcon, Moon, Play, Sunrise } from './icons'
+import { CircleHelp, EventIcon, Moon, Pencil, Play, Sunrise } from './icons'
 
 interface Props {
   events: BabyEvent[]
@@ -138,6 +138,7 @@ export function Timeline({
                 now={now}
                 abre={abre}
                 cierra={cierra}
+                onSelect={onSelect}
               >
                 {filas}
               </NightWrap>
@@ -189,6 +190,7 @@ function NightWrap({
   now,
   abre,
   cierra,
+  onSelect,
   children,
 }: {
   night: BabyEvent
@@ -197,6 +199,7 @@ function NightWrap({
   now: number
   abre: boolean
   cierra: boolean
+  onSelect: (event: BabyEvent) => void
   children: React.ReactNode
 }) {
   const slept = nightSleepSeconds(events, night, now)
@@ -204,10 +207,15 @@ function NightWrap({
 
   return (
     <div className={`night-wrap${abre ? ' abre' : ''}${cierra ? ' cierra' : ''}`}>
+      {/* Los bordes se tocan: es por donde se corrige una noche que empezó
+          antes de que se durmiera de verdad, o que nadie cerró a tiempo. */}
       {cierra && (
         <header className="night-wrap-edge">
-          <Sunrise size={14} />
-          Ya estamos en pie · {clock(night.endedAt as string, timezone)}
+          <button className="night-wrap-btn" onClick={() => onSelect(night)}>
+            <Sunrise size={14} />
+            Ya estamos en pie · {clock(night.endedAt as string, timezone)}
+            <Pencil size={11} aria-hidden="true" />
+          </button>
           <span className="grow" />
           <span className="mono tiny">
             {duration(longest)} del tirón · {duration(slept)} est.
@@ -218,8 +226,11 @@ function NightWrap({
       <div className="timeline">{children}</div>
       {abre && (
         <footer className="night-wrap-edge">
-          <Moon size={14} />
-          Nos acostamos · {clock(night.occurredAt, timezone)}
+          <button className="night-wrap-btn" onClick={() => onSelect(night)}>
+            <Moon size={14} />
+            Nos acostamos · {clock(night.occurredAt, timezone)}
+            <Pencil size={11} aria-hidden="true" />
+          </button>
         </footer>
       )}
     </div>
