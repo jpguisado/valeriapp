@@ -275,21 +275,11 @@ export function computeDailyStats(
 
   const touch = (key: DayKey): DailyStats | null => days.get(key) ?? null
 
-  // Lo que abre huecos en un sueño: los ratos en pie siempre, y dentro de una
-  // noche también las tomas, porque el envoltorio da por dormido todo lo que
-  // no esté apuntado.
-  const holesFor = (sleep: BabyEvent): Array<{ start: number; end: number }> => {
-    const night = (sleep.payload as { night?: unknown }).night === true
-    return liveEvents(events)
-      .filter(
-        (event) =>
-          event.id !== sleep.id &&
-          (event.type === 'wakeup' ||
-            (night && (event.type === 'breast' || event.type === 'sleep'))),
-      )
-      .map((event) => ({ start: toInstant(event.occurredAt), end: effectiveEnd(event, now) }))
-      .filter((range) => range.end > range.start)
-  }
+  // Los desvelos abren huecos en el sueño que los abarca.
+  const wakeups = liveEvents(events)
+    .filter((event) => event.type === 'wakeup')
+    .map((event) => ({ start: toInstant(event.occurredAt), end: effectiveEnd(event, now) }))
+    .filter((range) => range.end > range.start)
 
   for (const event of liveEvents(events)) {
     const tz = zoneFor(event.tz, options.timezone)
@@ -335,8 +325,8 @@ export function computeDailyStats(
       case 'sleep': {
         const endTs = effectiveEnd(event, now)
         if (day) day.sleepSessions += 1
-        // Lo apuntado dentro no fue sueño, aunque el envoltorio lo abarque.
-        for (const awake of subtractIntervals(startTs, endTs, holesFor(event))) {
+        // Lo que se apuntó como desvelo no es sueño, aunque caiga dentro.
+        for (const awake of subtractIntervals(startTs, endTs, wakeups)) {
           for (const slice of sliceByDay(awake.start, awake.end, tz)) {
             const target = touch(slice.dayKey)
             if (!target) continue
@@ -408,23 +398,17 @@ export function computeNights(
   options: Options,
   now: number = Date.now(),
 ): NightStats[] {
-  const holesFor = (sleep: BabyEvent): Array<{ start: number; end: number }> => {
-    const night = (sleep.payload as { night?: unknown }).night === true
-    return liveEvents(events)
-      .filter(
-        (e) =>
-          e.id !== sleep.id &&
-          (e.type === 'wakeup' || (night && (e.type === 'breast' || e.type === 'sleep'))),
-      )
-      .map((e) => ({ start: toInstant(e.occurredAt), end: effectiveEnd(e, now) }))
-      .filter((range) => range.end > range.start)
-  }
+  const wakeups = liveEvents(events)
+    .filter((e) => e.type === 'wakeup')
+    .map((e) => ({ start: toInstant(e.occurredAt), end: effectiveEnd(e, now) }))
+    .filter((range) => range.end > range.start)
 
-  // Un tramo por trozo realmente dormido: lo apuntado dentro lo parte.
+  // Un tramo por trozo realmente dormido: el desvelo apuntado dentro de un
+  // sueño lo parte, igual que lo haría una pausa.
   const sleeps = liveEvents(events)
     .filter((e) => e.type === 'sleep')
     .flatMap((e) =>
-      subtractIntervals(toInstant(e.occurredAt), effectiveEnd(e, now), holesFor(e)).map((piece) => ({
+      subtractIntervals(toInstant(e.occurredAt), effectiveEnd(e, now), wakeups).map((piece) => ({
         start: piece.start,
         end: piece.end,
         tz: zoneFor(e.tz, options.timezone),

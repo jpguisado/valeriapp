@@ -92,8 +92,6 @@
   color-scheme: dark;
 }
 
-
-
 * {
   box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
@@ -126,8 +124,6 @@ body::before {
   pointer-events: none;
   z-index: 0;
 }
-
-
 
 #root {
   position: relative;
@@ -1342,24 +1338,6 @@ a:focus-visible {
   color: var(--text-dim);
 }
 
-/* ---------------- la noche en marcha ---------------- */
-.night-strip {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--sleep) 12%, var(--surface));
-  border: 1px solid color-mix(in srgb, var(--sleep) 35%, transparent);
-}
-
-.night-strip .btn {
-  min-height: 40px;
-  padding: 8px 14px;
-  font-size: 0.85rem;
-  flex: none;
-}
-
 .chart-legend {
   display: flex;
   gap: 14px;
@@ -1395,59 +1373,3 @@ a:focus-visible {
   color: var(--text);
 }
 
-/* La noche envuelve a lo que pasó dentro. Cruza la medianoche, así que se
-   dibuja sin cerrar por el lado que continúa en el día de al lado: el corte
-   plano dice "esto sigue" mejor que cualquier rótulo. */
-.night-wrap {
-  position: relative;
-  margin: 4px 0;
-  padding-left: 10px;
-  border-left: 2px solid color-mix(in srgb, var(--sleep) 45%, transparent);
-  background: linear-gradient(
-    to right,
-    color-mix(in srgb, var(--sleep) 7%, transparent),
-    transparent 60%
-  );
-}
-
-.night-wrap.abre {
-  border-bottom-left-radius: var(--radius);
-  padding-bottom: 2px;
-}
-
-.night-wrap.cierra {
-  border-top-left-radius: var(--radius);
-  padding-top: 2px;
-}
-
-.night-wrap-edge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px 5px 2px;
-  font-size: 0.72rem;
-  color: var(--sleep);
-  letter-spacing: 0.02em;
-}
-
-.night-wrap-edge .mono {
-  color: var(--text-faint);
-}
-
-/* El borde de la noche se toca para corregirlo. */
-.night-wrap-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  min-height: 28px;
-}
-
-.night-wrap-btn svg:last-child {
-  opacity: 0.5;
-}

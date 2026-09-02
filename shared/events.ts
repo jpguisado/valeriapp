@@ -86,13 +86,6 @@ export const payloadSchemas = {
      * abierta y se puede reanudar. Un sueño terminado no lo lleva.
      */
     paused: z.boolean().optional(),
-    /**
-     * El sueño que envuelve una noche entera: de "nos acostamos" a "ya estamos
-     * en pie". Lo que durmió de verdad se calcula restándole lo apuntado.
-     */
-    night: z.boolean().optional(),
-    /** Esa noche se escapó algo y no se sabe qué: cuenta, pero avisada. */
-    doubtful: z.boolean().optional(),
   }),
   /** Un corte del sueño con principio y fin: se desveló y volvió a dormirse. */
   wakeup: z.object({}),

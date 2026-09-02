@@ -12,13 +12,9 @@ export type PickMode = 'now' | 'past'
  */
 export function TypePicker({
   onPick,
-  onStartNight,
-  nightActive = false,
   onClose,
 }: {
   onPick: (type: EventType, mode: PickMode) => void
-  onStartNight?: () => void
-  nightActive?: boolean
   onClose: () => void
 }) {
   // Abre siempre en "ahora", que es el caso de nueve de cada diez registros.
@@ -26,7 +22,7 @@ export function TypePicker({
 
   // Un desvelo es un corte de la noche: en "ahora" no significa nada sin noche
   // en marcha, pero apuntando algo pasado sí — la noche de ayer ya está cerrada.
-  const showWakeup = nightActive || mode === 'past'
+  const showWakeup = true
   const types = showWakeup ? PICKER_ORDER : PICKER_ORDER.filter((type) => type !== 'wakeup')
 
   return (
@@ -63,19 +59,6 @@ export function TypePicker({
             </button>
           ))}
 
-          {/* La noche no es un evento suelto: envuelve a los demás. */}
-          {mode === 'now' && onStartNight && !nightActive && (
-            <button
-              className="quick"
-              style={{ ['--accent' as string]: 'var(--sleep)' }}
-              onClick={onStartNight}
-            >
-              <span className="glyph">
-                <BedDouble size={22} strokeWidth={1.9} aria-hidden="true" />
-              </span>
-              <span>Nos acostamos</span>
-            </button>
-          )}
         </div>
       </div>
     </div>

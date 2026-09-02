@@ -9,7 +9,6 @@ import {
 } from '@shared/events'
 import { BreastSideSheet } from '@/components/BreastSideSheet'
 import { DayRing } from '@/components/DayRing'
-import { NightStrip } from '@/components/NightStrip'
 import { EventSheet } from '@/components/EventSheet'
 import { PageHeader } from '@/components/PageHeader'
 import { RunningTimers } from '@/components/RunningTimers'
@@ -22,8 +21,6 @@ import { babyAge, longDate } from '@/lib/format'
 import { useEvents, useNow } from '@/lib/hooks'
 import { Link } from '@/lib/router'
 import { useSession } from '@/lib/session'
-import { openNight } from '@shared/night'
-import { startNight } from '@/lib/night'
 import { startTimer } from '@/lib/timers'
 import { toast } from '@/lib/toast'
 
@@ -115,9 +112,6 @@ export function Home() {
         </div>
       )}
 
-      {activeBabyId && (
-        <NightStrip events={events} timezone={timezone.fixed} now={now} />
-      )}
 
       <div className="segmented" role="tablist" aria-label="Vista del día">
         <button
@@ -162,11 +156,6 @@ export function Home() {
         <TypePicker
           onClose={() => setPicking(false)}
           onPick={(type, mode) => void pick(type, mode)}
-          nightActive={Boolean(openNight(events))}
-          onStartNight={() => {
-            setPicking(false)
-            if (activeBabyId && user) void startNight(activeBabyId, user.id, events)
-          }}
         />
       )}
 

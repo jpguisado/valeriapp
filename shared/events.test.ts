@@ -380,20 +380,3 @@ describe('pausar el sueño', () => {
     expect(isSleepPaused(sueño())).toBe(false)
   })
 })
-
-describe('el envoltorio sobrevive a que lo editen', () => {
-  it('conserva night, sessionId y doubtful al validar el payload', () => {
-    const parsed = payloadSchemas.sleep.parse({
-      night: true,
-      doubtful: true,
-      sessionId: 'n1',
-      place: 'crib',
-    })
-    expect(parsed).toEqual({
-      night: true,
-      doubtful: true,
-      sessionId: 'n1',
-      place: 'crib',
-    })
-  })
-})

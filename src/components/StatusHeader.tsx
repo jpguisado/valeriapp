@@ -1,6 +1,5 @@
 import { useMemo, type ReactNode } from 'react'
 import { breastSplit, firstSideOf, payloadOf, type BabyEvent, type EventType } from '@shared/events'
-import { longestStretchSeconds, nightSleepSeconds, openNight } from '@shared/night'
 import { computeDailyStats, lastEventOfType } from '@shared/stats'
 import { dayKeyOf, type TimezoneSetting } from '@shared/time'
 import { ago, celsius, clock, duration, grams, hours } from '@/lib/format'
@@ -48,7 +47,6 @@ export function StatusHeader({ events, timezone, now }: Props) {
       ? ago(data.lastSleep.endedAt ?? data.lastSleep.occurredAt, now)
       : '—'
 
-  const noche = openNight(events)
   const diapers = data.stats?.diapers
   const medication = data.lastMedication ? payloadOf(data.lastMedication, 'medication') : null
 
@@ -67,18 +65,14 @@ export function StatusHeader({ events, timezone, now }: Props) {
         />
         <Item
           type="sleep"
-          label={noche ? 'Del tirón' : data.runningSleep ? 'Durmiendo' : 'Último sueño'}
-          /* De noche manda la racha más larga: es lo único que no es
-             estimación, porque sale de los momentos en que os llamó. */
-          value={noche ? duration(longestStretchSeconds(events, noche, now)) : sleepValue}
+          label={data.runningSleep ? 'Durmiendo' : 'Último sueño'}
+          value={sleepValue}
           detail={
-            noche
-              ? `${hours(nightSleepSeconds(events, noche, now))} estimadas`
-              : data.runningSleep
-                ? `desde las ${clock(data.runningSleep.occurredAt, tz)}`
-                : data.stats
-                  ? `${hours(data.stats.sleepSeconds)} hoy`
-                  : undefined
+            data.runningSleep
+              ? `desde las ${clock(data.runningSleep.occurredAt, tz)}`
+              : data.stats
+                ? `${hours(data.stats.sleepSeconds)} hoy`
+                : undefined
           }
         />
         <Item
