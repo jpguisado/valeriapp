@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   payloadSchemas,
+  finishSleepPayload,
   isSleepPaused,
   pauseSleepPayload,
-  pausedSleep,
+  resumableIds,
+  resumableSleepId,
   resumeSleepPayload,
+  sleptSeconds,
   breastFeedingSeconds,
   breastSplit,
   finishBreastPayload,
@@ -328,13 +331,13 @@ describe('lactancia mixta', () => {
   })
 })
 
-describe('pausar el sueño', () => {
+describe('pausar el sueño, igual que una toma', () => {
   const sueño = (over: Partial<BabyEvent> = {}): BabyEvent =>
     ({
       id: 's1',
       babyId: 'b1',
       type: 'sleep',
-      occurredAt: '2026-09-01T01:19:00.000Z',
+      occurredAt: '2026-09-03T13:10:00.000Z',
       endedAt: null,
       running: true,
       estimated: false,
@@ -343,40 +346,58 @@ describe('pausar el sueño', () => {
       ...over,
     }) as unknown as BabyEvent
 
-  it('la pausa estrena identificador de sesión con el id del primer tramo', () => {
-    const payload = pauseSleepPayload(sueño())
-    expect(payload.sessionId).toBe('s1')
-    expect(payload.paused).toBe(true)
+  const AHORA = Date.parse('2026-09-03T14:51:00.000Z')
+
+  it('la pausa para el reloj sin cerrar el sueño', () => {
+    const payload = pauseSleepPayload(sueño(), Date.parse('2026-09-03T13:23:00.000Z'))
+    expect(payload.pausedAt).toBe('2026-09-03T13:23:00.000Z')
+    expect(isSleepPaused({ type: 'sleep', payload })).toBe(true)
   })
 
-  it('al reanudar, el tramo nuevo hereda la sesión y no queda en pausa', () => {
-    const primero = sueño({
+  it('al reanudar, el rato despierta queda anotado', () => {
+    const pausado = sueño({ payload: { pausedAt: '2026-09-03T13:23:00.000Z' } })
+    const payload = resumeSleepPayload(pausado, Date.parse('2026-09-03T13:29:00.000Z'))
+    expect(payload.pausedAt).toBeUndefined()
+    expect(payload.awake).toEqual([
+      { from: '2026-09-03T13:23:00.000Z', to: '2026-09-03T13:29:00.000Z' },
+    ])
+  })
+
+  /** La siesta real del 3 de septiembre, que quedó partida en tres registros. */
+  it('una siesta con dos pausas es un solo sueño de 92 minutos', () => {
+    const siesta = sueño({
+      endedAt: '2026-09-03T14:51:00.000Z',
       running: false,
-      endedAt: '2026-09-01T03:15:00.000Z',
-      payload: { sessionId: 's1', paused: true },
+      payload: {
+        awake: [
+          { from: '2026-09-03T13:23:00.000Z', to: '2026-09-03T13:29:00.000Z' },
+          { from: '2026-09-03T14:32:00.000Z', to: '2026-09-03T14:35:00.000Z' },
+        ],
+      },
     })
-    const payload = resumeSleepPayload(primero)
-    expect(payload.sessionId).toBe('s1')
-    expect(payload.paused).toBeUndefined()
+    // 101 minutos de reloj menos 6 y 3 despierta: 92, la suma de los tramos.
+    expect(Math.round(sleptSeconds(siesta, AHORA) / 60)).toBe(92)
   })
 
-  it('un tramo pausado se ve; uno ya reanudado, no', () => {
-    const primero = sueño({
-      running: false,
-      endedAt: '2026-09-01T03:15:00.000Z',
-      payload: { sessionId: 's1', paused: true },
-    })
-    expect(pausedSleep([primero])?.id).toBe('s1')
-
-    const segundo = sueño({
-      id: 's2',
-      occurredAt: '2026-09-01T04:25:00.000Z',
-      payload: { sessionId: 's1' },
-    })
-    expect(pausedSleep([primero, segundo])).toBeNull()
+  it('mientras está en pausa el reloj no corre', () => {
+    const pausado = sueño({ payload: { pausedAt: '2026-09-03T13:23:00.000Z' } })
+    expect(Math.round(sleptSeconds(pausado, AHORA) / 60)).toBe(13)
   })
 
-  it('un sueño en curso no está en pausa', () => {
-    expect(isSleepPaused(sueño())).toBe(false)
+  it('parar un sueño en pausa lo cierra donde se despertó', () => {
+    const pausado = sueño({ payload: { pausedAt: '2026-09-03T13:23:00.000Z' } })
+    expect(finishSleepPayload(pausado).pausedAt).toBeUndefined()
+  })
+
+  it('el último sueño parado se puede reabrir; uno en curso no', () => {
+    const parado = sueño({ running: false, endedAt: '2026-09-03T14:51:00.000Z' })
+    expect(resumableSleepId([parado])).toBe('s1')
+    expect(resumableSleepId([sueño()])).toBeNull()
+  })
+
+  it('se puede reabrir la última toma y el último sueño a la vez', () => {
+    const parado = sueño({ running: false, endedAt: '2026-09-03T14:51:00.000Z' })
+    const toma = sueño({ id: 'p1', type: 'breast', running: false, endedAt: '2026-09-03T12:00:00.000Z' })
+    expect([...resumableIds([parado, toma])].sort()).toEqual(['p1', 's1'])
   })
 })

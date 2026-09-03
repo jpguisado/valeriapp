@@ -9,7 +9,13 @@
  *    Tuesday" means to a human.
  * Night metrics ignore both and use a night window that spans midnight.
  */
-import { breastSplit, durationSeconds, payloadOf, type BabyEvent } from './events.js'
+import {
+  awakeRanges,
+  breastSplit,
+  durationSeconds,
+  payloadOf,
+  type BabyEvent,
+} from './events.js'
 import {
   addDays,
   dayKeyOf,
@@ -281,6 +287,9 @@ export function computeDailyStats(
     .map((event) => ({ start: toInstant(event.occurredAt), end: effectiveEnd(event, now) }))
     .filter((range) => range.end > range.start)
 
+  /** Los huecos de un sueño: sus propias pausas más los desvelos de encima. */
+  const holesOf = (sleep: BabyEvent) => [...awakeRanges(sleep), ...wakeups]
+
   for (const event of liveEvents(events)) {
     const tz = zoneFor(event.tz, options.timezone)
     const startTs = toInstant(event.occurredAt)
@@ -326,7 +335,7 @@ export function computeDailyStats(
         const endTs = effectiveEnd(event, now)
         if (day) day.sleepSessions += 1
         // Lo que se apuntó como desvelo no es sueño, aunque caiga dentro.
-        for (const awake of subtractIntervals(startTs, endTs, wakeups)) {
+        for (const awake of subtractIntervals(startTs, endTs, holesOf(event))) {
           for (const slice of sliceByDay(awake.start, awake.end, tz)) {
             const target = touch(slice.dayKey)
             if (!target) continue
@@ -408,7 +417,10 @@ export function computeNights(
   const sleeps = liveEvents(events)
     .filter((e) => e.type === 'sleep')
     .flatMap((e) =>
-      subtractIntervals(toInstant(e.occurredAt), effectiveEnd(e, now), wakeups).map((piece) => ({
+      subtractIntervals(toInstant(e.occurredAt), effectiveEnd(e, now), [
+        ...awakeRanges(e),
+        ...wakeups,
+      ]).map((piece) => ({
         start: piece.start,
         end: piece.end,
         tz: zoneFor(e.tz, options.timezone),

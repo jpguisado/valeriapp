@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   EVENT_LABELS,
   isTimedType,
-  resumableBreastId,
+  resumableIds,
   type BabyEvent,
   type EventType,
   type SingleSide,
@@ -140,7 +140,7 @@ export function Home() {
         now={now}
         limitDays={2}
         daySummary="events"
-        resumableEventId={resumableBreastId(events)}
+        resumableEventIds={resumableIds(events)}
         onSelect={(event) => setSheet({ type: event.type, existing: event })}
       />
 

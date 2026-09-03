@@ -1,10 +1,12 @@
 import { useMemo } from 'react'
 import {
   EVENT_LABELS,
+  awakeRanges,
   breastSplit,
   durationSeconds,
   firstSideOf,
   payloadOf,
+  sleptSeconds,
   type BabyEvent,
   type EventType,
 } from '@shared/events'
@@ -25,8 +27,8 @@ interface Props {
   limitDays?: number
   /** What the right-hand side of each day header reports. */
   daySummary?: 'counts' | 'events'
-  /** La última toma de pecho, la única que puede reanudarse. */
-  resumableEventId?: string | null
+  /** Lo que puede reabrirse: la última toma y el último sueño parados. */
+  resumableEventIds?: ReadonlySet<string>
   /** Hide the day headers entirely, for a single-day list. */
   hideDays?: boolean
 }
@@ -41,7 +43,7 @@ export function Timeline({
   limitDays,
   daySummary = 'counts',
   hideDays = false,
-  resumableEventId = null,
+  resumableEventIds,
 }: Props) {
   const groups = useMemo(() => {
     const filtered = filter.length ? events.filter((event) => filter.includes(event.type)) : events
@@ -84,7 +86,7 @@ export function Timeline({
                 event={event}
                 timezone={timezone}
                 now={now}
-                resumable={event.id === resumableEventId}
+                resumable={resumableEventIds?.has(event.id) ?? false}
                 onSelect={onSelect}
               />
             ))}
@@ -122,7 +124,14 @@ function EventRow({
   onSelect: (event: BabyEvent) => void
 }) {
   const tz = zoneFor(event.tz, timezone)
-  const seconds = event.running ? (now - Date.parse(event.occurredAt)) / 1000 : durationSeconds(event)
+  // Un sueño cuenta lo dormido, no el reloj de pared: puede llevar pausas
+  // dentro, igual que una toma.
+  const seconds =
+    event.type === 'sleep'
+      ? sleptSeconds(event, now)
+      : event.running
+        ? (now - Date.parse(event.occurredAt)) / 1000
+        : durationSeconds(event)
 
   return (
     <button
@@ -211,6 +220,12 @@ function describe(event: BabyEvent, seconds: number | null, now: number): string
       }
       const side = split.rightSeconds > 0 ? 'Derecho' : 'Izquierdo'
       return `${side} · ${duration(fed)}${paused}${supplement}`
+    }
+    case 'sleep': {
+      const pausas = awakeRanges(event).length
+      if (seconds !== null) parts.push(duration(seconds))
+      if (pausas > 0) parts.push(pausas === 1 ? 'con 1 pausa' : `con ${pausas} pausas`)
+      return parts.join(' · ')
     }
     case 'bottle': {
       const payload = payloadOf(event, 'bottle')

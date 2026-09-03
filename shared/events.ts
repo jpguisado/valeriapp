@@ -76,16 +76,16 @@ export const payloadSchemas = {
   }),
   sleep: z.object({
     place: z.enum(['crib', 'arms', 'stroller', 'bed', 'car', 'other']).optional(),
+    /** Pausado en este instante: el reloj está parado, el sueño sigue abierto. */
+    pausedAt: z.string().optional(),
     /**
-     * Agrupa los tramos de una misma sesión de sueño partida por pausas. No
-     * es "la noche": una siesta de la mañana se interrumpe igual.
+     * Los ratos que estuvo despierta dentro de este sueño. Se guardan los
+     * intervalos y no solo un total porque el anillo de 24 h y la gráfica por
+     * horas necesitan saber *dónde* estuvo el hueco, no solo cuánto duró.
      */
-    sessionId: z.string().optional(),
-    /**
-     * Este tramo se cerró con una pausa, no con un final: la sesión sigue
-     * abierta y se puede reanudar. Un sueño terminado no lo lleva.
-     */
-    paused: z.boolean().optional(),
+    awake: z
+      .array(z.object({ from: z.string(), to: z.string() }))
+      .optional(),
   }),
   /** Un corte del sueño con principio y fin: se desveló y volvió a dormirse. */
   wakeup: z.object({}),
@@ -410,69 +410,121 @@ export function finishBreastPayload(
 /* ---------------------------------------------------------------- sueño --- */
 
 /**
- * Pausar un sueño cierra el tramo en curso; reanudarlo abre otro con el mismo
- * identificador de sesión. Se guardan tramos, y no un evento con agujeros,
- * porque así el anillo de 24 h y la gráfica por horas siguen leyendo intervalos
- * continuos: lo que se dibuja como sueño es sueño.
+ * El sueño se pausa igual que una toma: el evento sigue abierto, el reloj se
+ * para y lo que se cuenta es el tiempo dormido, no el de pared.
  *
- * Vale igual para la noche que para una siesta partida de media mañana.
+ * La primera versión cerraba el tramo y abría otro, y una siesta interrumpida
+ * dos veces aparecía como tres registros en el historial. Era el mismo defecto
+ * que llevó a que una toma con cambio de pecho fuese un solo evento.
+ *
+ * A diferencia del pecho, aquí se guardan los intervalos despierta y no un
+ * acumulado: el anillo y la gráfica por horas tienen que saber en qué momento
+ * estuvo el hueco para no pintarlo como sueño.
  */
-export function isSleepPaused(event: Pick<BabyEvent, 'type' | 'payload' | 'running'>): boolean {
-  if (event.type !== 'sleep' || event.running) return false
-  return (event.payload as { paused?: unknown }).paused === true
+export function isSleepPaused(event: Pick<BabyEvent, 'type' | 'payload'>): boolean {
+  if (event.type !== 'sleep') return false
+  return typeof (event.payload as { pausedAt?: unknown }).pausedAt === 'string'
 }
 
-/** El tramo pausado que sigue esperando a que la reanuden, si lo hay. */
-export function pausedSleep(events: BabyEvent[]): BabyEvent | null {
-  let best: BabyEvent | null = null
-  for (const event of events) {
-    if (event.deletedAt || !isSleepPaused(event)) continue
-    if (!best || Date.parse(event.endedAt ?? event.occurredAt) > Date.parse(best.endedAt ?? best.occurredAt)) {
-      best = event
-    }
-  }
-  if (!best) return null
-  // Si después del tramo pausado ya hay otro sueño de la misma sesión, la
-  // pausa se reanudó: lo que manda es el último tramo.
-  const session = sessionIdOf(best)
-  const cerrado = events.some(
-    (e) =>
-      !e.deletedAt &&
-      e.type === 'sleep' &&
-      e.id !== best?.id &&
-      sessionIdOf(e) === session &&
-      Date.parse(e.occurredAt) >= Date.parse(best?.endedAt ?? best?.occurredAt ?? ''),
-  )
-  return cerrado ? null : best
-}
-
-export function sessionIdOf(event: Pick<BabyEvent, 'payload'>): string | null {
-  const value = (event.payload as { sessionId?: unknown }).sessionId
+export function sleepPausedAt(event: Pick<BabyEvent, 'payload'>): string | null {
+  const value = (event.payload as { pausedAt?: unknown }).pausedAt
   return typeof value === 'string' ? value : null
 }
 
-/** Cierra el tramo por pausa, asegurando que la sesión tenga identificador. */
-export function pauseSleepPayload(
-  event: Pick<BabyEvent, 'id' | 'payload'>,
-): PayloadOf<'sleep'> {
-  const previous = (event.payload ?? {}) as PayloadOf<'sleep'>
-  return { ...previous, sessionId: sessionIdOf(event) ?? event.id, paused: true }
+/** Los ratos despierta dentro de un sueño, en milisegundos. */
+export function awakeRanges(
+  event: Pick<BabyEvent, 'payload'>,
+): Array<{ start: number; end: number }> {
+  const raw = (event.payload as { awake?: Array<{ from: string; to: string }> }).awake
+  if (!Array.isArray(raw)) return []
+  return raw
+    .map((range) => ({ start: Date.parse(range.from), end: Date.parse(range.to) }))
+    .filter((range) => Number.isFinite(range.start) && range.end > range.start)
 }
 
-/** El payload del tramo nuevo al reanudar: misma sesión, sin marca de pausa. */
-export function resumeSleepPayload(previous: BabyEvent): PayloadOf<'sleep'> {
-  const anterior = (previous.payload ?? {}) as PayloadOf<'sleep'>
+/** Lo que de verdad ha dormido: el reloj de pared menos los ratos despierta. */
+export function sleptSeconds(
+  event: Pick<BabyEvent, 'type' | 'payload' | 'occurredAt' | 'endedAt' | 'running'>,
+  now: number = Date.now(),
+): number {
+  const start = Date.parse(event.occurredAt)
+  const paused = sleepPausedAt(event)
+  const end = event.endedAt
+    ? Date.parse(event.endedAt)
+    : paused
+      ? Date.parse(paused)
+      : event.running
+        ? now
+        : start
+  const awake = awakeRanges(event).reduce(
+    (total, range) => total + Math.max(0, Math.min(range.end, end) - Math.max(range.start, start)),
+    0,
+  )
+  return Math.max(0, (end - start - awake) / 1000)
+}
+
+/** Se ha despertado: el reloj se para, el sueño sigue abierto. */
+export function pauseSleepPayload(
+  event: Pick<BabyEvent, 'payload'>,
+  at: number = Date.now(),
+): PayloadOf<'sleep'> {
+  const previous = (event.payload ?? {}) as PayloadOf<'sleep'>
+  return { ...previous, pausedAt: new Date(at).toISOString() }
+}
+
+/** Se ha vuelto a dormir: el rato despierta queda anotado y el reloj sigue. */
+export function resumeSleepPayload(
+  event: Pick<BabyEvent, 'payload'>,
+  at: number = Date.now(),
+): PayloadOf<'sleep'> {
+  const previous = (event.payload ?? {}) as PayloadOf<'sleep'>
+  const paused = sleepPausedAt(event)
+  if (!paused) return previous
   return {
-    ...anterior,
-    sessionId: sessionIdOf(previous) ?? previous.id,
-    paused: undefined,
+    ...previous,
+    pausedAt: undefined,
+    awake: [...(previous.awake ?? []), { from: paused, to: new Date(at).toISOString() }],
   }
 }
 
-/** Cierra la sesión entera: el tramo pausado deja de estarlo. */
-export function closeSleepPayload(previous: BabyEvent): PayloadOf<'sleep'> {
-  const anterior = (previous.payload ?? {}) as PayloadOf<'sleep'>
-  return { ...anterior, paused: undefined }
+/**
+ * Al parar un sueño pausado, el sueño acabó cuando se despertó, no ahora: el
+ * rato de después ya no fue sueño y no tiene por qué constar como tal.
+ */
+export function finishSleepPayload(event: Pick<BabyEvent, 'payload'>): PayloadOf<'sleep'> {
+  const previous = (event.payload ?? {}) as PayloadOf<'sleep'>
+  return { ...previous, pausedAt: undefined }
+}
+
+/**
+ * Lo que puede reabrirse ahora mismo: la última toma y el último sueño, si
+ * están parados. Parar sin querer es el error más fácil de cometer con una
+ * mano a las cuatro de la mañana, y deshacerlo debe costar un toque.
+ */
+export function resumableIds(events: BabyEvent[]): ReadonlySet<string> {
+  const ids = new Set<string>()
+  const breast = resumableBreastId(events)
+  const sleep = resumableSleepId(events)
+  if (breast) ids.add(breast)
+  if (sleep) ids.add(sleep)
+  return ids
+}
+
+/** El último sueño terminado, el único que puede reabrirse. */
+export function resumableSleepId(events: BabyEvent[]): string | null {
+  let latest: BabyEvent | null = null
+  for (const event of events) {
+    if (event.deletedAt || event.type !== 'sleep') continue
+    if (!latest || Date.parse(event.occurredAt) > Date.parse(latest.occurredAt)) latest = event
+  }
+  if (!latest || latest.running) return null
+  return latest.id
+}
+
+/** Reabre un sueño parado por error: lo ya contado se conserva. */
+export function reopenSleepPayload(event: Pick<BabyEvent, 'payload'>): PayloadOf<'sleep'> {
+  const previous = (event.payload ?? {}) as PayloadOf<'sleep'>
+  return { ...previous, pausedAt: undefined }
 }
 
 function round(seconds: number): number {

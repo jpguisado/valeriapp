@@ -4,7 +4,9 @@ import {
   breastFeedingSeconds,
   breastSplit,
   isBreastPaused,
-  pausedSleep,
+  isSleepPaused,
+  sleepPausedAt,
+  sleptSeconds,
   payloadOf,
   type BabyEvent,
 } from '@shared/events'
@@ -12,15 +14,7 @@ import { computeDailyStats, type DailyStats } from '@shared/stats'
 import { dayKeyOf, type TimezoneSetting } from '@shared/time'
 import { clock, duration, hours, liveDuration, ml } from '@/lib/format'
 import { useNow } from '@/lib/hooks'
-import {
-  endSleepSession,
-  pauseFeed,
-  pauseSleep,
-  resumeFeed,
-  resumeSleep,
-  stopTimer,
-  switchSide,
-} from '@/lib/timers'
+import { pauseFeed, pauseSleep, resumeFeed, resumeSleep, stopTimer, switchSide } from '@/lib/timers'
 import { EVENT_ACCENTS } from './event-meta'
 import { CircleStop, EventIcon, Pause, Pencil, Play, Repeat } from './icons'
 import { StartTimeSheet } from './StartTimeSheet'
@@ -38,10 +32,6 @@ interface Props {
  */
 export function RunningTimers({ events, timezone, now, createdBy }: Props) {
   const running = events.filter((event) => event.running)
-  // Un sueño en pausa no está "en curso", pero tiene que seguir a la vista:
-  // es lo único desde donde se reanuda.
-  const dormida = running.some((event) => event.type === 'sleep')
-  const enPausa = dormida ? null : pausedSleep(events)
 
   // Only tick every second while something short is running; a three-hour nap
   // shows minutes, and redrawing it 3600 times would buy nothing.
@@ -57,18 +47,10 @@ export function RunningTimers({ events, timezone, now, createdBy }: Props) {
     [events, today, timezone, Math.floor(tick / 30_000)],
   )
 
-  if (running.length === 0 && !enPausa) return null
+  if (running.length === 0) return null
 
   return (
     <div className="col">
-      {enPausa && (
-        <PausedSleepCard
-          event={enPausa}
-          createdBy={createdBy}
-          timezone={timezone}
-          now={tick}
-        />
-      )}
       {running.map((event) => (
         <RunningCard
           key={event.id}
@@ -100,7 +82,8 @@ function RunningCard({
   const tz = timezone.fixed
   const accent = EVENT_ACCENTS[event.type]
   const isBreast = event.type === 'breast'
-  const paused = isBreast && isBreastPaused(event)
+  const isSleep = event.type === 'sleep'
+  const paused = isBreast ? isBreastPaused(event) : isSleep ? isSleepPaused(event) : false
   const split = isBreast ? breastSplit(event, now) : null
   const active = split?.activeSide
   const other = active === 'left' ? 'right' : 'left'
@@ -108,9 +91,15 @@ function RunningCard({
   // A feed measures time at the breast; everything else measures wall clock.
   const seconds = isBreast
     ? breastFeedingSeconds(event, now)
-    : Math.max(0, (now - Date.parse(event.occurredAt)) / 1000)
+    : isSleep
+      ? sleptSeconds(event, now)
+      : Math.max(0, (now - Date.parse(event.occurredAt)) / 1000)
 
-  const pausedSince = paused ? payloadOf(event, 'breast')?.pausedAt : undefined
+  const pausedSince = !paused
+    ? undefined
+    : isBreast
+      ? payloadOf(event, 'breast')?.pausedAt
+      : (sleepPausedAt(event) ?? undefined)
 
   /** What has added up today, this session included. */
   const todayTotal = !stats
@@ -190,9 +179,13 @@ function RunningCard({
         </div>
       )}
 
-      {event.type === 'sleep' && (
-        <button className="btn block" onClick={() => void pauseSleep(event)}>
-          <Pause size={17} /> Se ha despertado
+      {isSleep && (
+        <button
+          className="btn block"
+          onClick={() => void (paused ? resumeSleep(event) : pauseSleep(event))}
+        >
+          {paused ? <Play size={17} /> : <Pause size={17} />}
+          {paused ? 'Reanudar' : 'Pausa'}
         </button>
       )}
 
@@ -208,62 +201,6 @@ function RunningCard({
           onClose={() => setEditingStart(false)}
         />
       )}
-    </section>
-  )
-}
-
-/**
- * El sueño en pausa. No hay reloj corriendo —lo que corre es el rato que lleva
- * despierta— y las dos salidas son explícitas: se volvió a dormir, o ya está.
- */
-function PausedSleepCard({
-  event,
-  createdBy,
-  timezone,
-  now,
-}: {
-  event: BabyEvent
-  createdBy: string
-  timezone: TimezoneSetting
-  now: number
-}) {
-  const tz = timezone.fixed
-  const desde = Date.parse(event.endedAt ?? event.occurredAt)
-  const despierta = Math.max(0, (now - desde) / 1000)
-
-  return (
-    <section
-      className="card col running-card"
-      style={{ ['--accent' as string]: EVENT_ACCENTS.sleep }}
-      aria-label="Sueño en pausa"
-    >
-      <div className="row between" style={{ alignItems: 'flex-start' }}>
-        <div className="row" style={{ gap: 12 }}>
-          <span className="bullet">
-            <EventIcon type="sleep" size={20} />
-          </span>
-          <div className="col" style={{ gap: 1 }}>
-            <h2>Sueño en pausa</h2>
-            <span className="tiny faint">despierta desde las {clock(desde, tz)}</span>
-          </div>
-        </div>
-        <div className="col" style={{ gap: 4, alignItems: 'flex-end' }}>
-          <span className="badge">en pausa</span>
-          <span className="running-time">{liveDuration(despierta)}</span>
-        </div>
-      </div>
-
-      <div className="row">
-        <button
-          className="btn primary grow"
-          onClick={() => void resumeSleep(event, createdBy)}
-        >
-          <Play size={17} /> Se ha dormido
-        </button>
-        <button className="btn grow" onClick={() => void endSleepSession(event)}>
-          <CircleStop size={17} /> Ya está despierta
-        </button>
-      </div>
     </section>
   )
 }

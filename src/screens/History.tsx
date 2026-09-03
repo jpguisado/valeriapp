@@ -1,5 +1,10 @@
 import { useState } from 'react'
-import { EVENT_LABELS, resumableBreastId, type BabyEvent, type EventType } from '@shared/events'
+import {
+  EVENT_LABELS,
+  resumableIds,
+  type BabyEvent,
+  type EventType,
+} from '@shared/events'
 import { EventSheet } from '@/components/EventSheet'
 import { PageHeader } from '@/components/PageHeader'
 import { Timeline } from '@/components/Timeline'
@@ -61,7 +66,7 @@ export function History() {
         filter={filter ? [filter] : []}
         limitDays={days}
         daySummary="counts"
-        resumableEventId={resumableBreastId(events)}
+        resumableEventIds={resumableIds(events)}
         onSelect={setSelected}
       />
 

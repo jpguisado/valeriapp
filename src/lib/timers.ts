@@ -1,6 +1,9 @@
 import {
-  closeSleepPayload,
   finishBreastPayload,
+  finishSleepPayload,
+  isSleepPaused,
+  reopenSleepPayload,
+  sleepPausedAt,
   isBreastPaused,
   isTimedType,
   pauseBreastPayload,
@@ -64,12 +67,21 @@ export async function stopTimer(
   context: FeedbackContext,
   at: number = Date.now(),
 ): Promise<void> {
+  // Parar un sueño en pausa lo cierra donde se despertó: lo de después no fue
+  // sueño y no tiene por qué constar como tal.
+  const pausadoEn = event.type === 'sleep' ? sleepPausedAt(event) : null
+  const fin = pausadoEn ? Date.parse(pausadoEn) : at
   const stopped: BabyEvent = {
     ...event,
     running: false,
     estimated: false,
-    endedAt: new Date(at).toISOString(),
-    payload: event.type === 'breast' ? finishBreastPayload(event, at) : event.payload,
+    endedAt: new Date(fin).toISOString(),
+    payload:
+      event.type === 'breast'
+        ? finishBreastPayload(event, at)
+        : event.type === 'sleep'
+          ? finishSleepPayload(event)
+          : event.payload,
   }
   try {
     await saveEvent(stopped)
@@ -93,63 +105,17 @@ export async function resumeFeed(event: BabyEvent, at: number = Date.now()): Pro
   announcePaused(false)
 }
 
-/**
- * Se ha despertado a mitad del sueño. El tramo se cierra aquí y la sesión
- * queda abierta: lo que venga después es otro tramo de lo mismo, no un sueño
- * nuevo. Sirve igual de noche que en una siesta.
- */
-export async function pauseSleep(
-  event: BabyEvent,
-  at: number = Date.now(),
-): Promise<void> {
-  if (event.type !== 'sleep' || !event.running) return
-  try {
-    await saveEvent({
-      ...event,
-      running: false,
-      estimated: false,
-      endedAt: new Date(at).toISOString(),
-      payload: pauseSleepPayload(event),
-    })
-  } catch {
-    announceFailure()
-    return
-  }
+/** Se ha despertado a mitad del sueño: el reloj para, el sueño sigue abierto. */
+export async function pauseSleep(event: BabyEvent, at: number = Date.now()): Promise<void> {
+  if (event.type !== 'sleep' || !event.running || isSleepPaused(event)) return
+  await saveEvent({ ...event, payload: pauseSleepPayload(event, at) })
   announcePaused(true)
 }
 
-/** Se ha vuelto a dormir: tramo nuevo, misma sesión. */
-export async function resumeSleep(
-  paused: BabyEvent,
-  createdBy: string,
-  at: number = Date.now(),
-): Promise<void> {
-  const tramo = newEvent({
-    babyId: paused.babyId,
-    type: 'sleep',
-    running: true,
-    createdBy,
-    payload: resumeSleepPayload(paused),
-  })
-  tramo.occurredAt = new Date(at).toISOString()
-  try {
-    await saveEvent(tramo)
-    // El tramo anterior deja de estar "en pausa": ya se reanudó.
-    await saveEvent({ ...paused, payload: closeSleepPayload(paused) })
-  } catch {
-    announceFailure()
-    return
-  }
+export async function resumeSleep(event: BabyEvent, at: number = Date.now()): Promise<void> {
+  if (event.type !== 'sleep' || !event.running || !isSleepPaused(event)) return
+  await saveEvent({ ...event, payload: resumeSleepPayload(event, at) })
   announcePaused(false)
-}
-
-/** Se acabó la siesta o la noche: la sesión se cierra sin reanudar nada. */
-export async function endSleepSession(paused: BabyEvent): Promise<void> {
-  try {
-    await saveEvent({ ...paused, payload: closeSleepPayload(paused) })
-  } catch {
-    announceFailure()
-  }
 }
 
 /** Baby moved to the other breast: same feed, new segment. */
@@ -178,18 +144,19 @@ export async function adjustStart(
 }
 
 /**
- * Reabre una toma parada por error, con un segmento nuevo en el pecho en el
- * que se había quedado. Lo ya contado se conserva.
+ * Reabre una toma o un sueño parados por error. Lo ya contado se conserva; en
+ * el pecho, además, se sigue por el lado en el que se había quedado.
  */
 export async function resumeSession(event: BabyEvent, at: number = Date.now()): Promise<void> {
-  if (event.type !== 'breast' || event.running) return
+  if ((event.type !== 'breast' && event.type !== 'sleep') || event.running) return
   try {
     await saveEvent({
       ...event,
       running: true,
       endedAt: null,
       estimated: false,
-      payload: reopenBreastPayload(event, at),
+      payload:
+        event.type === 'breast' ? reopenBreastPayload(event, at) : reopenSleepPayload(event),
     })
   } catch {
     announceFailure()
