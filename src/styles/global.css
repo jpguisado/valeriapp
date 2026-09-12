@@ -1369,10 +1369,20 @@ a:focus-visible {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  min-height: 18px;
+  /* Alto fijo, no mínimo: el texto de reposo y el del detalle no usan los
+     mismos tamaños, y con min-height la línea crecía al señalar un tramo y
+     empujaba la gráfica hacia abajo. */
+  height: 20px;
+  line-height: 20px;
+  overflow: hidden;
   margin-bottom: 2px;
   font-size: 0.8rem;
   color: var(--text-dim);
+}
+
+/* Todo lo de dentro comparte caja de línea, para que no altere el alto. */
+.chart-readout > * {
+  line-height: 20px;
 }
 
 .chart-readout .strong {
