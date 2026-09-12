@@ -121,7 +121,7 @@ export function GrowthChart({
   const activeAge = active === null ? null : (geometry.ages[active] as number)
   const activePercentile =
     activePoint && sex && activeAge !== null
-      ? percentileOfWeight(sex, activeAge, activePoint.value / 1000)
+      ? percentileOfWeight(sex, activeAge, activePoint.value)
       : null
 
   return (
