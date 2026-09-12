@@ -357,9 +357,7 @@ export function SleepBandChart({ days, tz, now }: { days: DailyStats[]; tz: stri
                     width={w}
                     height={barHeight}
                     fill="var(--sleep)"
-                    opacity={esActiva ? 1 : active ? base * 0.45 : base}
-                    stroke={esActiva ? 'var(--text)' : undefined}
-                    strokeWidth={esActiva ? 0.8 : undefined}
+                    opacity={esActiva ? 1 : active ? base * 0.4 : base}
                   />
                 )
               })}
