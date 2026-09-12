@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react'
 import type { DailyStats, MeasurementPoint } from '@shared/stats'
 import { dayKeyOf, parseDayKey } from '@shared/time'
-import { dayLabel } from '@/lib/format'
+import { dayLabel, duration } from '@/lib/format'
 
 /**
  * Hand-drawn SVG charts. A charting library would weigh more than the whole
@@ -249,11 +249,72 @@ export function SleepBandChart({ days, tz, now }: { days: DailyStats[]; tz: stri
   const rowHeight = 18
   const labelWidth = 40
   const width = 320
+  const barHeight = rowHeight - 5
   const height = days.length * rowHeight + 20
+
+  /**
+   * Las barras son rectangulares a propósito. Redondearlas hasta la cápsula
+   * convertía un sueño corto en un óvalo y le comía los extremos a los
+   * largos, que es justo donde se lee a qué hora empezó y acabó.
+   */
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [active, setActive] = useState<{ row: number; band: number } | null>(null)
+
+  const bandAt = (clientX: number, clientY: number): { row: number; band: number } | null => {
+    const box = svgRef.current?.getBoundingClientRect()
+    if (!box || box.width === 0) return null
+    const x = ((clientX - box.left) / box.width) * width
+    const y = ((clientY - box.top) / box.height) * height
+    const row = Math.floor((y - 16) / rowHeight)
+    const day = days[row]
+    if (!day || row < 0) return null
+    const minute = ((x - labelWidth) / (width - labelWidth)) * 1440
+    const band = day.sleepBands.findIndex(
+      (b) => minute >= b.startMinute && minute <= b.endMinute,
+    )
+    return band === -1 ? null : { row, band }
+  }
+
+  const activeDay = active ? days[active.row] : undefined
+  const activeBand = activeDay?.sleepBands[active?.band ?? -1]
 
   return (
     <figure className="chart" style={{ margin: 0 }}>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Sueño por franjas horarias">
+      <div className="chart-readout" aria-live="polite">
+        {activeDay && activeBand ? (
+          <>
+            <span className="strong">{dayLabel(activeDay.dayKey, tz, now)}</span>
+            <span className="mono">
+              {hhmm(activeBand.startMinute)} – {hhmm(activeBand.endMinute)}
+            </span>
+            <span className="faint tiny">
+              {duration((activeBand.endMinute - activeBand.startMinute) * 60)}
+            </span>
+          </>
+        ) : (
+          <span className="faint tiny">Toca un tramo para ver a qué hora fue</span>
+        )}
+      </div>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label="Sueño por franjas horarias"
+        style={{ touchAction: 'pan-y' }}
+        onPointerDown={(event) => {
+          const hit = bandAt(event.clientX, event.clientY)
+          setActive((current) =>
+            current && hit && current.row === hit.row && current.band === hit.band ? null : hit,
+          )
+        }}
+        onPointerMove={(event) => {
+          if (event.pointerType !== 'mouse') return
+          setActive(bandAt(event.clientX, event.clientY))
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === 'mouse') setActive(null)
+        }}
+      >
         {[0, 6, 12, 18, 24].map((hour) => (
           <text
             key={hour}
@@ -277,23 +338,28 @@ export function SleepBandChart({ days, tz, now }: { days: DailyStats[]; tz: stri
                 x={labelWidth}
                 y={y}
                 width={width - labelWidth}
-                height={rowHeight - 5}
+                height={barHeight}
                 fill="var(--surface-2)"
-                rx={(rowHeight - 5) / 2}
               />
               {day.sleepBands.map((band, bandIndex) => {
                 const x = labelWidth + ((width - labelWidth) * band.startMinute) / 1440
-                const w = Math.max(3, ((width - labelWidth) * (band.endMinute - band.startMinute)) / 1440)
+                const w = Math.max(
+                  1.5,
+                  ((width - labelWidth) * (band.endMinute - band.startMinute)) / 1440,
+                )
+                const esActiva = active?.row === index && active?.band === bandIndex
+                const base = band.estimated ? 0.45 : 0.9
                 return (
                   <rect
                     key={bandIndex}
                     x={x}
                     y={y}
                     width={w}
-                    height={rowHeight - 5}
+                    height={barHeight}
                     fill="var(--sleep)"
-                    opacity={band.estimated ? 0.45 : 0.9}
-                    rx={(rowHeight - 5) / 2}
+                    opacity={esActiva ? 1 : active ? base * 0.45 : base}
+                    stroke={esActiva ? 'var(--text)' : undefined}
+                    strokeWidth={esActiva ? 0.8 : undefined}
                   />
                 )
               })}
@@ -303,6 +369,12 @@ export function SleepBandChart({ days, tz, now }: { days: DailyStats[]; tz: stri
       </svg>
     </figure>
   )
+}
+
+/** Minutos desde medianoche como hora de reloj: 325 → "05:25". */
+function hhmm(minute: number): string {
+  const m = Math.round(minute)
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
 }
 
 export function LineChart({
