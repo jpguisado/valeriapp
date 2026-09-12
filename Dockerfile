@@ -6,7 +6,10 @@ RUN apk add --no-cache postgresql16-client tini
 
 ENV NODE_ENV=production \
     PNPM_HOME=/usr/local/bin
-RUN corepack enable
+# pnpm fijado a propósito. Con `corepack enable` a secas, la imagen se traía
+# la última versión que hubiera ese día: el build dejó de ser reproducible y
+# se rompió solo cuando corepack no supo descargar la 12.4.1.
+RUN npm install --global pnpm@10.15.0
 
 WORKDIR /app
 
