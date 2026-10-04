@@ -13,6 +13,8 @@ import {
   awakeRanges,
   breastSplit,
   durationSeconds,
+  milkOf,
+  milkTotal,
   payloadOf,
   type BabyEvent,
 } from './events.js'
@@ -58,6 +60,9 @@ export interface DailyStats {
   bottleMl: number
   /** Lactancia mixta: el biberón dado dentro de una toma de pecho. */
   supplementMl: number
+  /** La misma leche (biberones y suplementos) según su origen. */
+  breastmilkMl: number
+  formulaMl: number
   pumpMl: number
   pumpSessions: number
   breastSeconds: number
@@ -99,6 +104,8 @@ export interface PeriodSummary {
     feeds: number
     bottleMl: number
     supplementMl: number
+    breastmilkMl: number
+    formulaMl: number
     pumpMl: number
     breastSeconds: number
     leftSeconds: number
@@ -151,6 +158,8 @@ function emptyDay(dayKey: DayKey): DailyStats {
     bottleFeeds: 0,
     bottleMl: 0,
     supplementMl: 0,
+    breastmilkMl: 0,
+    formulaMl: 0,
     pumpMl: 0,
     pumpSessions: 0,
     breastSeconds: 0,
@@ -309,7 +318,10 @@ export function computeDailyStats(
           day.leftSeconds += split.leftSeconds
           day.rightSeconds += split.rightSeconds
           // El suplemento es parte de esta toma, no una toma más.
-          day.supplementMl += payloadOf(event, 'breast')?.supplementMl ?? 0
+          const milk = milkOf(event)
+          day.supplementMl += milkTotal(milk)
+          day.breastmilkMl += milk.breastmilkMl
+          day.formulaMl += milk.formulaMl
           if (event.estimated) day.hasEstimates = true
         }
         break
@@ -320,6 +332,9 @@ export function computeDailyStats(
           day.feeds += 1
           day.bottleFeeds += 1
           day.bottleMl += payload?.ml ?? 0
+          const milk = milkOf(event)
+          day.breastmilkMl += milk.breastmilkMl
+          day.formulaMl += milk.formulaMl
         }
         break
       }
@@ -480,6 +495,8 @@ export function summarise(
     feeds: sum(daily, (d) => d.feeds),
     bottleMl: sum(daily, (d) => d.bottleMl),
     supplementMl: sum(daily, (d) => d.supplementMl),
+    breastmilkMl: sum(daily, (d) => d.breastmilkMl),
+    formulaMl: sum(daily, (d) => d.formulaMl),
     pumpMl: sum(daily, (d) => d.pumpMl),
     breastSeconds: sum(daily, (d) => d.breastSeconds),
     leftSeconds: sum(daily, (d) => d.leftSeconds),

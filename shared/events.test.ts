@@ -23,6 +23,8 @@ import {
   startBreastPayload,
   switchBreastPayload,
   withShiftedStart,
+  milkOf,
+  milkPayload,
   type BabyEvent,
 } from './events.js'
 
@@ -399,5 +401,31 @@ describe('pausar el sueño, igual que una toma', () => {
     const parado = sueño({ running: false, endedAt: '2026-09-03T14:51:00.000Z' })
     const toma = sueño({ id: 'p1', type: 'breast', running: false, endedAt: '2026-09-03T12:00:00.000Z' })
     expect([...resumableIds([parado, toma])].sort()).toEqual(['p1', 's1'])
+  })
+})
+
+describe('leche materna y fórmula', () => {
+  it('lee el desglose de un biberón mixto', () => {
+    expect(milkOf({ type: 'bottle', payload: { ml: 60, kind: 'mixed', breastmilkMl: 30, formulaMl: 30 } }))
+      .toEqual({ breastmilkMl: 30, formulaMl: 30, unknownMl: 0 })
+  })
+
+  it('reparte los registros antiguos según su tipo', () => {
+    expect(milkOf({ type: 'bottle', payload: { ml: 90, kind: 'breastmilk' } }))
+      .toEqual({ breastmilkMl: 90, formulaMl: 0, unknownMl: 0 })
+    expect(milkOf({ type: 'breast', payload: { side: 'left', supplementMl: 40, supplementKind: 'formula' } }))
+      .toEqual({ breastmilkMl: 0, formulaMl: 40, unknownMl: 0 })
+  })
+
+  it('no inventa proporción para un biberón antiguo "mixta"', () => {
+    expect(milkOf({ type: 'bottle', payload: { ml: 120, kind: 'mixed' } }))
+      .toEqual({ breastmilkMl: 0, formulaMl: 0, unknownMl: 120 })
+  })
+
+  it('el biberón guarda el total y el tipo como resumen', () => {
+    expect(milkPayload('bottle', 30, 30)).toEqual({ breastmilkMl: 30, formulaMl: 30, ml: 60, kind: 'mixed' })
+    expect(milkPayload('bottle', 0, 90)).toEqual({ formulaMl: 90, ml: 90, kind: 'formula' })
+    expect(milkPayload('breast', 30, 0)).toEqual({ breastmilkMl: 30 })
+    expect(payloadSchemas.bottle.safeParse(milkPayload('bottle', 30, 30)).success).toBe(true)
   })
 })

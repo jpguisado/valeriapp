@@ -6,6 +6,7 @@ import {
   breastSplit,
   durationSeconds,
   firstSideOf,
+  milkOf,
   type BabyEvent,
   type EventType,
 } from '../../shared/events.js'
@@ -98,8 +99,8 @@ const COMMON_COLUMNS = [
 ]
 
 const PAYLOAD_COLUMNS: Partial<Record<EventType, string[]>> = {
-  breast: ['lado', 'empezo_por', 'minutos_izq', 'minutos_der'],
-  bottle: ['ml', 'tipo_leche'],
+  breast: ['lado', 'empezo_por', 'minutos_izq', 'minutos_der', 'ml_materna', 'ml_formula', 'ml_sin_desglose'],
+  bottle: ['ml', 'tipo_leche', 'ml_materna', 'ml_formula', 'ml_sin_desglose'],
   pump: ['lado', 'ml'],
   sleep: ['lugar'],
   diaper: ['contenido', 'consistencia', 'color', 'escape'],
@@ -136,6 +137,16 @@ function flatten(
   }
 }
 
+function milkColumns(event: BabyEvent): Record<string, unknown> {
+  const milk = milkOf(event)
+  const cell = (value: number) => (value > 0 ? value : '')
+  return {
+    ml_materna: cell(milk.breastmilkMl),
+    ml_formula: cell(milk.formulaMl),
+    ml_sin_desglose: cell(milk.unknownMl),
+  }
+}
+
 function payloadColumns(event: BabyEvent): Record<string, unknown> {
   const p = event.payload as Record<string, unknown>
   switch (event.type) {
@@ -147,10 +158,11 @@ function payloadColumns(event: BabyEvent): Record<string, unknown> {
         empezo_por: first === 'left' ? 'izquierdo' : first === 'right' ? 'derecho' : '',
         minutos_izq: Math.round(split.leftSeconds / 60),
         minutos_der: Math.round(split.rightSeconds / 60),
+        ...milkColumns(event),
       }
     }
     case 'bottle':
-      return { ml: p.ml, tipo_leche: p.kind }
+      return { ml: p.ml, tipo_leche: p.kind, ...milkColumns(event) }
     case 'pump':
       return { lado: p.side, ml: p.ml }
     case 'sleep':

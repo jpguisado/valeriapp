@@ -266,6 +266,12 @@ export function Stats() {
               value={`${ml(current.totals.bottleMl)} biberón · ${ml(current.totals.supplementMl)} suplemento`}
             />
           )}
+          {current.totals.breastmilkMl + current.totals.formulaMl > 0 && (
+            <Fact
+              label="· por tipo"
+              value={`${ml(current.totals.breastmilkMl)} materna · ${ml(current.totals.formulaMl)} fórmula`}
+            />
+          )}
           <Fact
             label="Media por biberón"
             value={current.averages.mlPerBottle === null ? '—' : ml(current.averages.mlPerBottle)}

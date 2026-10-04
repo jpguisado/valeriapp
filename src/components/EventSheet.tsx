@@ -4,6 +4,8 @@ import {
   SIDE_LABELS,
   durationSeconds,
   isTimedType,
+  milkOf,
+  milkPayload,
   withShiftedStart,
   type BabyEvent,
   type EventType,
@@ -11,7 +13,7 @@ import {
 } from '@shared/events'
 import { deviceTimezone } from '@shared/time'
 import { isoToLocalInput, localInputToIso } from '@/lib/datetime-input'
-import { clock, duration } from '@/lib/format'
+import { clock, duration, ml } from '@/lib/format'
 import { announceDeleted, announceEdited, announceFailure, announceRecorded } from '@/lib/feedback'
 import { useEvents } from '@/lib/hooks'
 import { deleteEvent, newEvent, saveEvent } from '@/lib/sync'
@@ -54,7 +56,9 @@ export function EventSheet({ type, babyId, existing, initialAt, onClose }: Props
     const seconds = existing ? durationSeconds(existing) : null
     return seconds === null ? '' : String(Math.round(seconds / 60))
   })
-  const [payload, setPayload] = useState<Payload>(() => ({ ...defaultPayload(type), ...(existing?.payload ?? {}) }))
+  const [payload, setPayload] = useState<Payload>(() =>
+    existing ? { ...defaultPayload(type), ...milkFormFields(existing) } : defaultPayload(type),
+  )
   const [note, setNote] = useState(existing?.note ?? '')
   const [details, setDetails] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -310,33 +314,7 @@ function TypeFields({
               ]}
             />
           )}
-          <div className="row">
-            <label className="field grow">
-              Suplemento (ml)
-              <input
-                type="number"
-                inputMode="numeric"
-                min={0}
-                step={5}
-                value={(payload.supplementMl as number) ?? ''}
-                onChange={(e) =>
-                  set('supplementMl', e.target.value === '' ? undefined : Number(e.target.value))
-                }
-                placeholder="—"
-              />
-            </label>
-            {Boolean(payload.supplementMl) && (
-              <Chips
-                label="Tipo"
-                value={(payload.supplementKind as string) ?? 'formula'}
-                onChange={(value) => set('supplementKind', value)}
-                options={[
-                  ['breastmilk', 'Materna'],
-                  ['formula', 'Fórmula'],
-                ]}
-              />
-            )}
-          </div>
+          <MilkFields type="breast" title="Suplemento en biberón" payload={payload} set={set} />
           {/* With both breasts used, the split is the point of the record, not
               an optional detail. */}
           {(bothSides || details) && (
@@ -367,31 +345,7 @@ function TypeFields({
       )
     }
     case 'bottle':
-      return (
-        <>
-          <label className="field">
-            Cantidad (ml)
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              step={5}
-              value={(payload.ml as number) ?? ''}
-              onChange={(e) => set('ml', Number(e.target.value))}
-            />
-          </label>
-          <Chips
-            label="Tipo"
-            value={payload.kind as string}
-            onChange={(value) => set('kind', value)}
-            options={[
-              ['breastmilk', 'Leche materna'],
-              ['formula', 'Fórmula'],
-              ['mixed', 'Mixta'],
-            ]}
-          />
-        </>
-      )
+      return <MilkFields type="bottle" title="Cantidad" payload={payload} set={set} />
     case 'pump':
       return (
         <>
@@ -606,12 +560,82 @@ function Chips({
   )
 }
 
+/**
+ * Lactancia mixta: en un mismo biberón puede ir leche extraída y fórmula, así
+ * que se piden las dos cantidades en vez de un total y un tipo.
+ */
+function MilkFields({
+  type,
+  title,
+  payload,
+  set,
+}: {
+  type: 'bottle' | 'breast'
+  title: string
+  payload: Payload
+  set: (key: string, value: unknown) => void
+}) {
+  const milk = milkOf({ type, payload })
+  const typed = milk.breastmilkMl + milk.formulaMl
+  const field = (key: 'breastmilkMl' | 'formulaMl', label: string) => (
+    <label className="field grow">
+      {label}
+      <input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        step={5}
+        value={(payload[key] as number) ?? ''}
+        onChange={(e) => set(key, e.target.value === '' ? undefined : Number(e.target.value))}
+        placeholder="0"
+      />
+    </label>
+  )
+  return (
+    <div className="col">
+      <span className="tiny dim">
+        {title} (ml){milk.breastmilkMl > 0 && milk.formulaMl > 0 ? ` · total ${ml(typed)}` : ''}
+      </span>
+      <div className="row">
+        {field('breastmilkMl', 'Leche materna')}
+        {field('formulaMl', 'Fórmula')}
+      </div>
+      {milk.unknownMl > 0 && (
+        <span className="tiny faint">
+          Registrado antes como {ml(milk.unknownMl)} sin desglosar. Escribe las cantidades para
+          corregirlo.
+        </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Lo guardado, con la leche ya en las dos cantidades que pide el formulario.
+ * Los campos del formato anterior se quitan al pasarlos, para que vaciar una
+ * cantidad no haga reaparecer el total antiguo; solo se conservan cuando no
+ * hay forma de saber qué leche era.
+ */
+function milkFormFields(event: BabyEvent): Payload {
+  const output: Payload = { ...event.payload }
+  if (event.type !== 'bottle' && event.type !== 'breast') return output
+  const milk = milkOf(event)
+  if (milk.unknownMl > 0) return output
+  delete output.ml
+  delete output.kind
+  delete output.supplementMl
+  delete output.supplementKind
+  output.breastmilkMl = milk.breastmilkMl || undefined
+  output.formulaMl = milk.formulaMl || undefined
+  return output
+}
+
 export function defaultPayload(type: EventType): Payload {
   switch (type) {
     case 'breast':
       return { side: 'left' }
     case 'bottle':
-      return { ml: 60, kind: 'formula' }
+      return {}
     case 'pump':
       return { side: 'both', ml: 0 }
     case 'diaper':
@@ -636,6 +660,18 @@ function cleanPayload(type: EventType, payload: Payload): Payload {
     output[key] = value
   }
   if (type === 'medication' && !output.name) output.name = 'Sin nombre'
+  if (type === 'bottle' || type === 'breast') {
+    const milk = milkOf({ type, payload: output })
+    const typed = milk.breastmilkMl + milk.formulaMl
+    // Un registro antiguo sin desglosar se queda como estaba hasta que alguien
+    // escriba las cantidades.
+    if (typed > 0 || milk.unknownMl === 0) {
+      for (const key of ['ml', 'kind', 'supplementMl', 'supplementKind', 'breastmilkMl', 'formulaMl']) {
+        delete output[key]
+      }
+      Object.assign(output, milkPayload(type, milk.breastmilkMl, milk.formulaMl))
+    }
+  }
   if (type === 'breast') {
     // Editing by hand always produces a finished feed: no live segment left.
     delete output.activeSide

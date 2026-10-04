@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { HAS_DURATION_TYPES, payloadOf, type BabyEvent } from '@shared/events'
+import { HAS_DURATION_TYPES, milkOf, milkTotal, type BabyEvent } from '@shared/events'
 import {
   dayFraction,
   dayKeyOf,
@@ -142,10 +142,7 @@ export function DayRing({ events, timezone, now, dayKey }: Props) {
 
       {slices.map((slice) => {
         const [x, y] = point(RM, slice.mid)
-        const supplement =
-          slice.event.type === 'breast'
-            ? (payloadOf(slice.event, 'breast')?.supplementMl ?? 0)
-            : 0
+        const supplement = slice.event.type === 'breast' ? milkTotal(milkOf(slice.event)) : 0
         return (
           <g key={`${slice.event.id}-icon`} style={{ color: EVENT_ACCENTS[slice.event.type] }}>
             <circle cx={x} cy={y} r={ICON / 2 + 2.5} fill="var(--bg)" />

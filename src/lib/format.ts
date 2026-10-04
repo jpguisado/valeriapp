@@ -1,4 +1,4 @@
-import { EVENT_LABELS, type BabyEvent } from '@shared/events'
+import { EVENT_LABELS, type BabyEvent, type MilkSplit } from '@shared/events'
 import { dayKeyOf, zonedParts, type DayKey } from '@shared/time'
 
 export function pad(value: number): string {
@@ -124,6 +124,18 @@ export function number(value: number, decimals = 1): string {
 
 export function ml(value: number): string {
   return `${Math.round(value)} ml`
+}
+
+/**
+ * La leche de una toma en una línea: "30 ml materna + 30 ml fórmula".
+ * Vacío si no tomó nada de biberón.
+ */
+export function describeMilk(milk: MilkSplit): string {
+  const parts: string[] = []
+  if (milk.breastmilkMl > 0) parts.push(`${ml(milk.breastmilkMl)} materna`)
+  if (milk.formulaMl > 0) parts.push(`${ml(milk.formulaMl)} fórmula`)
+  if (milk.unknownMl > 0) parts.push(ml(milk.unknownMl))
+  return parts.join(' + ')
 }
 
 export function eventTitle(event: BabyEvent): string {

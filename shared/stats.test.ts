@@ -282,6 +282,28 @@ describe('lactancia mixta en las estadísticas', () => {
     const [day] = computeDailyStats(events, '2026-08-30', '2026-08-30', { timezone: MADRID })
     expect(day?.supplementMl).toBe(0)
   })
+
+  it('separa la leche materna de la fórmula en biberones y suplementos', () => {
+    const events = [
+      event('breast', '2026-08-30T08:00:00.000Z', {
+        endedAt: '2026-08-30T08:10:00.000Z',
+        payload: {
+          side: 'right', firstSide: 'right', leftSeconds: 0, rightSeconds: 600,
+          breastmilkMl: 30, formulaMl: 30,
+        },
+      }),
+      event('bottle', '2026-08-30T12:00:00.000Z', {
+        payload: { ml: 80, kind: 'mixed', breastmilkMl: 50, formulaMl: 30 },
+      }),
+      // Formato anterior: un total y un tipo.
+      event('bottle', '2026-08-30T16:00:00.000Z', { payload: { ml: 90, kind: 'formula' } }),
+    ]
+    const [day] = computeDailyStats(events, '2026-08-30', '2026-08-30', { timezone: MADRID })
+    expect(day?.supplementMl).toBe(60)
+    expect(day?.bottleMl).toBe(170)
+    expect(day?.breastmilkMl).toBe(80)
+    expect(day?.formulaMl).toBe(150)
+  })
 })
 
 describe('el avance del peso', () => {

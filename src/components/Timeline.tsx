@@ -5,6 +5,7 @@ import {
   breastSplit,
   durationSeconds,
   firstSideOf,
+  milkOf,
   payloadOf,
   sleptSeconds,
   type BabyEvent,
@@ -12,7 +13,7 @@ import {
 } from '@shared/events'
 import { computeDailyStats } from '@shared/stats'
 import { dayKeyOf, zoneFor, type TimezoneSetting } from '@shared/time'
-import { celsius, clock, dayLabel, duration, grams, ml } from '@/lib/format'
+import { celsius, clock, dayLabel, describeMilk, duration, grams, ml } from '@/lib/format'
 import { resumeSession } from '@/lib/timers'
 import { EVENT_ACCENTS } from './event-meta'
 import { EventIcon, Play } from './icons'
@@ -201,16 +202,8 @@ function describe(event: BabyEvent, seconds: number | null, now: number): string
       const fed = split.leftSeconds + split.rightSeconds
       const paused = (seconds ?? 0) - fed > 60 ? ' · con pausas' : ''
 
-      const payload = payloadOf(event, 'breast')
-      const supplement = payload?.supplementMl
-        ? ` · +${ml(payload.supplementMl)}${
-            payload.supplementKind === 'formula'
-              ? ' fórmula'
-              : payload.supplementKind === 'breastmilk'
-                ? ' materna'
-                : ''
-          }`
-        : ''
+      const milk = describeMilk(milkOf(event))
+      const supplement = milk ? ` · +${milk}` : ''
 
       if (split.leftSeconds > 0 && split.rightSeconds > 0) {
         const first = firstSideOf(event)
@@ -230,10 +223,9 @@ function describe(event: BabyEvent, seconds: number | null, now: number): string
     case 'bottle': {
       const payload = payloadOf(event, 'bottle')
       if (payload) {
-        parts.push(ml(payload.ml))
-        parts.push(
-          payload.kind === 'breastmilk' ? 'leche materna' : payload.kind === 'formula' ? 'fórmula' : 'mixta',
-        )
+        const milk = milkOf(event)
+        // Sin desglose de un registro antiguo, el total y "mixta" es todo lo que hay.
+        parts.push(milk.unknownMl > 0 ? `${ml(payload.ml)} · mixta` : describeMilk(milk) || ml(0))
       }
       break
     }

@@ -10,12 +10,13 @@ import {
   EVENT_LABELS,
   breastFeedingSeconds,
   durationSeconds,
+  milkOf,
   payloadOf,
   type BabyEvent,
 } from '@shared/events'
 import { computeDailyStats } from '@shared/stats'
 import { dayKeyOf, toInstant, type TimezoneSetting } from '@shared/time'
-import { ago, celsius, clock, cm, duration, grams, hours, ml, number } from './format'
+import { ago, celsius, clock, cm, describeMilk, duration, grams, hours, ml, number } from './format'
 import { vibrate, type Haptic } from './haptics'
 import { toast, toastError } from './toast'
 
@@ -92,7 +93,9 @@ export function recordedMessage(event: BabyEvent, context: FeedbackContext): str
     case 'bottle': {
       const payload = payloadOf(event, 'bottle')
       const feeds = stats ? ` · ${plural(stats.feeds, 'toma hoy', 'tomas hoy')}` : ''
-      return `Biberón · ${ml(payload?.ml ?? 0)}${feeds}`
+      const milk = milkOf(event)
+      const amount = milk.unknownMl > 0 ? ml(payload?.ml ?? 0) : describeMilk(milk) || ml(0)
+      return `Biberón · ${amount}${feeds}`
     }
 
     case 'diaper': {

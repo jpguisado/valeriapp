@@ -83,7 +83,14 @@ describe('recordedMessage', () => {
 
   it('reports the bottle volume and the running feed count', () => {
     const bottle = event('bottle', 0, { ml: 120, kind: 'formula' })
-    expect(recordedMessage(bottle, context([]))).toBe('Biberón · 120 ml · 1 toma hoy')
+    expect(recordedMessage(bottle, context([]))).toBe('Biberón · 120 ml fórmula · 1 toma hoy')
+  })
+
+  it('reports both milks of a mixed bottle', () => {
+    const bottle = event('bottle', 0, { ml: 60, kind: 'mixed', breastmilkMl: 30, formulaMl: 30 })
+    expect(recordedMessage(bottle, context([]))).toBe(
+      'Biberón · 30 ml materna + 30 ml fórmula · 1 toma hoy',
+    )
   })
 
   it('points at a higher temperature earlier in the day', () => {

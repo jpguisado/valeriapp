@@ -62,13 +62,22 @@ export const payloadSchemas = {
     pausedAt: z.string().optional(),
     leftSeconds: z.number().min(0).max(86400).optional(),
     rightSeconds: z.number().min(0).max(86400).optional(),
-    /** Lactancia mixta: el biberón que acompañó a esta toma, no otra toma. */
+    /**
+     * Lactancia mixta: el biberón que acompañó a esta toma, no otra toma,
+     * desglosado en leche materna (extraída) y fórmula.
+     */
+    breastmilkMl: z.number().min(0).max(2000).optional(),
+    formulaMl: z.number().min(0).max(2000).optional(),
+    /** Formato anterior al desglose: un total y un solo tipo. Solo se lee. */
     supplementMl: z.number().min(0).max(2000).optional(),
     supplementKind: z.enum(['breastmilk', 'formula']).optional(),
   }),
   bottle: z.object({
+    /** Total del biberón; con desglose, la suma de las dos leches. */
     ml: z.number().min(0).max(2000),
     kind: z.enum(['breastmilk', 'formula', 'mixed']),
+    breastmilkMl: z.number().min(0).max(2000).optional(),
+    formulaMl: z.number().min(0).max(2000).optional(),
   }),
   pump: z.object({
     side: sideSchema,
@@ -167,6 +176,76 @@ export function payloadOf<T extends EventType>(event: BabyEvent, type: T): Paylo
   if (event.type !== type) return null
   const parsed = payloadSchemas[type].safeParse(event.payload)
   return parsed.success ? (parsed.data as PayloadOf<T>) : null
+}
+
+/* ---------------------------------------------------------------- leche --- */
+
+export interface MilkSplit {
+  breastmilkMl: number
+  formulaMl: number
+  /** Registros antiguos de tipo "mixta" o sin tipo: se sabe cuánto, no de qué. */
+  unknownMl: number
+}
+
+/**
+ * La leche que tomó en un biberón o como suplemento de una toma de pecho,
+ * separada en materna y fórmula.
+ *
+ * Los registros nuevos guardan las dos cantidades. Los anteriores guardaban un
+ * total y un tipo; se reparten según ese tipo, y lo que era "mixta" queda sin
+ * asignar en vez de inventar una proporción.
+ */
+export function milkOf(event: Pick<BabyEvent, 'type' | 'payload'>): MilkSplit {
+  const split: MilkSplit = { breastmilkMl: 0, formulaMl: 0, unknownMl: 0 }
+  if (event.type !== 'bottle' && event.type !== 'breast') return split
+  const raw = event.payload as {
+    breastmilkMl?: unknown
+    formulaMl?: unknown
+    ml?: unknown
+    kind?: unknown
+    supplementMl?: unknown
+    supplementKind?: unknown
+  }
+  const amount = (value: unknown): number =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+
+  if (raw.breastmilkMl !== undefined || raw.formulaMl !== undefined) {
+    split.breastmilkMl = amount(raw.breastmilkMl)
+    split.formulaMl = amount(raw.formulaMl)
+    return split
+  }
+
+  const total = amount(event.type === 'bottle' ? raw.ml : raw.supplementMl)
+  const kind = event.type === 'bottle' ? raw.kind : raw.supplementKind
+  if (kind === 'breastmilk') split.breastmilkMl = total
+  else if (kind === 'formula') split.formulaMl = total
+  else split.unknownMl = total
+  return split
+}
+
+export function milkTotal(split: MilkSplit): number {
+  return split.breastmilkMl + split.formulaMl + split.unknownMl
+}
+
+/**
+ * Los campos de leche listos para guardar a partir de las dos cantidades.
+ * El biberón conserva `ml` y `kind` como resumen, que es lo que leen la
+ * exportación y las versiones anteriores de la app.
+ */
+export function milkPayload(
+  type: 'bottle' | 'breast',
+  breastmilkMl: number,
+  formulaMl: number,
+): Record<string, unknown> {
+  const output: Record<string, unknown> = {}
+  if (breastmilkMl > 0) output.breastmilkMl = breastmilkMl
+  if (formulaMl > 0) output.formulaMl = formulaMl
+  if (type === 'bottle') {
+    output.ml = breastmilkMl + formulaMl
+    output.kind =
+      breastmilkMl > 0 && formulaMl > 0 ? 'mixed' : breastmilkMl > 0 ? 'breastmilk' : 'formula'
+  }
+  return output
 }
 
 export interface BreastSplit {
