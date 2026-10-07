@@ -7,6 +7,25 @@ function urlBase64ToUint8Array(base64: string): Uint8Array {
   return Uint8Array.from(raw, (char) => char.charCodeAt(0))
 }
 
+/**
+ * `serviceWorker.ready` never settles if the worker failed to install, which
+ * left the button looking dead. Fail loudly instead.
+ */
+async function swRegistration(): Promise<ServiceWorkerRegistration> {
+  let timer = 0
+  const timeout = new Promise<never>((_, reject) => {
+    timer = window.setTimeout(
+      () => reject(new Error('el service worker no está activo; cierra la app y vuelve a abrirla')),
+      10_000,
+    )
+  })
+  try {
+    return await Promise.race([navigator.serviceWorker.ready, timeout])
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 export function pushSupported(): boolean {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 }
@@ -34,14 +53,14 @@ function sameKey(subscription: PushSubscription, vapidPublicKey: string): boolea
  */
 export async function isSubscribed(): Promise<boolean> {
   if (!pushSupported() || Notification.permission !== 'granted') return false
-  const registration = await navigator.serviceWorker.ready
+  const registration = await swRegistration()
   return (await registration.pushManager.getSubscription()) !== null
 }
 
 /** Re-sends this device's subscription so the server has it even after it dropped it. */
 export async function resyncPush(): Promise<void> {
   if (!pushSupported() || Notification.permission !== 'granted') return
-  const registration = await navigator.serviceWorker.ready
+  const registration = await swRegistration()
   const subscription = await registration.pushManager.getSubscription()
   if (subscription) await api.post('/api/push/subscribe', subscription.toJSON())
 }
@@ -51,7 +70,7 @@ export async function enablePush(vapidPublicKey: string): Promise<'ok' | 'denied
   const result = await Notification.requestPermission()
   if (result !== 'granted') return 'denied'
 
-  const registration = await navigator.serviceWorker.ready
+  const registration = await swRegistration()
   let existing = await registration.pushManager.getSubscription()
   // Made with an older VAPID key: the server can no longer sign for it.
   if (existing && !sameKey(existing, vapidPublicKey)) {
@@ -71,7 +90,7 @@ export async function enablePush(vapidPublicKey: string): Promise<'ok' | 'denied
 
 export async function disablePush(): Promise<void> {
   if (!pushSupported()) return
-  const registration = await navigator.serviceWorker.ready
+  const registration = await swRegistration()
   const subscription = await registration.pushManager.getSubscription()
   if (!subscription) return
   await api.post('/api/push/unsubscribe', { endpoint: subscription.endpoint }).catch(() => {})

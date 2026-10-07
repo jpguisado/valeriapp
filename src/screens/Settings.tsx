@@ -49,7 +49,7 @@ function SettingsIndex() {
   const [pushOn, setPushOn] = useState(false)
 
   useEffect(() => {
-    void isSubscribed().then(setPushOn)
+    void isSubscribed().then(setPushOn, () => setPushOn(false))
   }, [])
 
   return (
@@ -361,10 +361,11 @@ function NotificationsScreen() {
   const [haptics, setHaptics] = useState(() => hapticsEnabled())
 
   useEffect(() => {
-    void isSubscribed().then(setSubscribed)
+    void isSubscribed().then(setSubscribed, () => setSubscribed(false))
   }, [])
 
   async function enable(): Promise<void> {
+    setMessage('Activando…')
     const result = await enablePush(vapidPublicKey).catch((error: unknown) => {
       setMessage(`No se pudo activar: ${error instanceof Error ? error.message : String(error)}`)
       return null

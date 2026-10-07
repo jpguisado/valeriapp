@@ -20,7 +20,9 @@ interface PushPayload {
 
 const manifest = self.__WB_MANIFEST
 const CACHE = `valeriapp-${manifest.map((entry) => entry.revision ?? entry.url).join('').length}`
-const PRECACHE_URLS = ['/', ...manifest.map((entry) => entry.url)]
+// The plugin lists the manifest icons twice, and `cache.addAll` rejects a
+// batch with duplicate requests: the install failed and the SW never activated.
+const PRECACHE_URLS = [...new Set(['/', ...manifest.map((entry) => entry.url)])]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
