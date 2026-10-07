@@ -20,8 +20,30 @@ export function requiresInstall(): boolean {
   return isIos && !standalone
 }
 
-export function permission(): NotificationPermission | 'unsupported' {
-  return pushSupported() ? Notification.permission : 'unsupported'
+function sameKey(subscription: PushSubscription, vapidPublicKey: string): boolean {
+  const current = subscription.options.applicationServerKey
+  if (!current) return true
+  const expected = urlBase64ToUint8Array(vapidPublicKey)
+  const actual = new Uint8Array(current)
+  return actual.length === expected.length && actual.every((byte, i) => byte === expected[i])
+}
+
+/**
+ * Permission alone says nothing: Safari revokes subscriptions and the server
+ * drops the ones the push service rejects, while permission stays "granted".
+ */
+export async function isSubscribed(): Promise<boolean> {
+  if (!pushSupported() || Notification.permission !== 'granted') return false
+  const registration = await navigator.serviceWorker.ready
+  return (await registration.pushManager.getSubscription()) !== null
+}
+
+/** Re-sends this device's subscription so the server has it even after it dropped it. */
+export async function resyncPush(): Promise<void> {
+  if (!pushSupported() || Notification.permission !== 'granted') return
+  const registration = await navigator.serviceWorker.ready
+  const subscription = await registration.pushManager.getSubscription()
+  if (subscription) await api.post('/api/push/subscribe', subscription.toJSON())
 }
 
 export async function enablePush(vapidPublicKey: string): Promise<'ok' | 'denied' | 'unsupported'> {
@@ -30,7 +52,12 @@ export async function enablePush(vapidPublicKey: string): Promise<'ok' | 'denied
   if (result !== 'granted') return 'denied'
 
   const registration = await navigator.serviceWorker.ready
-  const existing = await registration.pushManager.getSubscription()
+  let existing = await registration.pushManager.getSubscription()
+  // Made with an older VAPID key: the server can no longer sign for it.
+  if (existing && !sameKey(existing, vapidPublicKey)) {
+    await existing.unsubscribe()
+    existing = null
+  }
   const subscription =
     existing ??
     (await registration.pushManager.subscribe({

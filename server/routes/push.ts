@@ -44,6 +44,7 @@ pushRoutes.post('/unsubscribe', async (c) => {
 })
 
 pushRoutes.post('/test', async (c) => {
+  if (!pushConfigured) return c.json({ sent: 0, enabled: false })
   const sent = await pushToHousehold(c.get('user').householdId, {
     kind: 'test',
     tag: 'test',
@@ -51,5 +52,5 @@ pushRoutes.post('/test', async (c) => {
     body: 'Las notificaciones funcionan.',
     url: '/',
   })
-  return c.json({ sent })
+  return c.json({ sent, enabled: true })
 })

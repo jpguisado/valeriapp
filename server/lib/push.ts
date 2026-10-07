@@ -18,6 +18,15 @@ export interface PushPayload {
 
 let configured = false
 
+/**
+ * Safari has no silent push: every push must show a notification, and after a
+ * few that don't, it revokes the subscription for good. A "cancel" shows
+ * nothing, so it must never reach an Apple endpoint.
+ */
+function acceptsSilentPush(endpoint: string): boolean {
+  return !new URL(endpoint).hostname.endsWith('push.apple.com')
+}
+
 function ensureConfigured(): boolean {
   if (!pushConfigured) return false
   if (!configured) {
@@ -48,15 +57,19 @@ export async function pushToHousehold(householdId: string, payload: PushPayload)
   if (!ensureConfigured()) return 0
   const subs = await subscriptionsForUsers(await userIdsOfHousehold(householdId))
   const body = JSON.stringify(payload)
+  // Past this age a reminder is noise; the push service drops it, not the SW,
+  // because a push the SW swallows counts against the subscription on Safari.
+  const ttl = Math.min(3600, (payload.maxLateMinutes ?? 60) * 60)
   let delivered = 0
 
   await Promise.all(
     subs.map(async (sub) => {
+      if (payload.kind === 'cancel' && !acceptsSilentPush(sub.endpoint)) return
       try {
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
           body,
-          { TTL: 3600, urgency: payload.kind === 'cancel' ? 'high' : 'normal' },
+          { TTL: ttl, urgency: payload.kind === 'cancel' ? 'high' : 'normal' },
         )
         delivered += 1
       } catch (error) {
@@ -64,7 +77,9 @@ export async function pushToHousehold(householdId: string, payload: PushPayload)
         if (statusCode === 404 || statusCode === 410) {
           await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id))
         } else {
-          console.warn('[push] envío fallido', statusCode ?? error)
+          const host = new URL(sub.endpoint).hostname
+          const detail = (error as { body?: string }).body ?? error
+          console.warn('[push] envío fallido', host, statusCode ?? '', detail)
         }
       }
     }),

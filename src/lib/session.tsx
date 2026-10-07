@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { TimezoneSetting } from '@shared/time'
 import { api } from './api'
+import { resyncPush } from './push'
 import { clearLocalData } from './db'
 import { loadSnapshot, startSyncLoop, sync } from './sync'
 import type { HouseholdSnapshot } from './db'
@@ -44,6 +45,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const me = await api.get<{ user: SessionUser; vapidPublicKey: string }>('/api/auth/me')
       setUser(me.user)
       setVapidPublicKey(me.vapidPublicKey)
+      void resyncPush().catch(() => {})
       await sync()
     } catch {
       // Offline or logged out: fall back to whatever is cached locally.

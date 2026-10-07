@@ -71,12 +71,13 @@ self.addEventListener('fetch', (event) => {
 })
 
 self.addEventListener('push', (event) => {
-  if (!event.data) return
-  let payload: PushPayload
+  // Safari revokes the subscription after a few pushes that show nothing, so
+  // anything but a cancel (which the server never sends to Safari) must show.
+  let payload: PushPayload = { kind: 'test', tag: 'valeriapp' }
   try {
-    payload = event.data.json() as PushPayload
+    if (event.data) payload = event.data.json() as PushPayload
   } catch {
-    return
+    // Unreadable payload: fall through to a generic notification.
   }
 
   if (payload.kind === 'cancel') {
@@ -86,12 +87,6 @@ self.addEventListener('push', (event) => {
         .then((notifications) => notifications.forEach((notification) => notification.close())),
     )
     return
-  }
-
-  // A reminder that arrives long after it was due is noise, not information.
-  if (payload.firedAt && payload.maxLateMinutes) {
-    const lateMinutes = (Date.now() - Date.parse(payload.firedAt)) / 60_000
-    if (lateMinutes > payload.maxLateMinutes) return
   }
 
   const originalTime = payload.firedAt

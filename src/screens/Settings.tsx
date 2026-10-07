@@ -14,7 +14,7 @@ import { Check, ChevronLeft, LogOut, Plus, RefreshCw } from '@/components/icons'
 import { api } from '@/lib/api'
 import { babyAge, birthLabel } from '@/lib/format'
 import { useSyncStatus } from '@/lib/hooks'
-import { disablePush, enablePush, permission, pushSupported, requiresInstall } from '@/lib/push'
+import { disablePush, enablePush, isSubscribed, pushSupported, requiresInstall } from '@/lib/push'
 import { useRouter } from '@/lib/router'
 import { useSession } from '@/lib/session'
 import { hapticsEnabled, hapticsSupported, setHapticsEnabled, vibrate } from '@/lib/haptics'
@@ -46,7 +46,11 @@ export function Settings() {
 function SettingsIndex() {
   const { babies, activeBabyId, members, user } = useSession()
   const baby = babies.find((candidate) => candidate.id === activeBabyId) ?? babies[0]
-  const pushState = permission()
+  const [pushOn, setPushOn] = useState(false)
+
+  useEffect(() => {
+    void isSubscribed().then(setPushOn)
+  }, [])
 
   return (
     <div className="page">
@@ -88,7 +92,7 @@ function SettingsIndex() {
           to="/ajustes/notificaciones"
           icon={<Bell size={19} />}
           label="Notificaciones"
-          value={pushState === 'granted' ? 'Activadas' : 'Desactivadas'}
+          value={pushOn ? 'Activadas' : 'Desactivadas'}
         />
         <Row
           to="/ajustes/hogar"
@@ -352,19 +356,42 @@ function RemindersScreen() {
 
 function NotificationsScreen() {
   const { vapidPublicKey } = useSession()
-  const [state, setState] = useState(() => permission())
+  const [subscribed, setSubscribed] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [haptics, setHaptics] = useState(() => hapticsEnabled())
 
+  useEffect(() => {
+    void isSubscribed().then(setSubscribed)
+  }, [])
+
   async function enable(): Promise<void> {
-    const result = await enablePush(vapidPublicKey)
-    setState(permission())
+    const result = await enablePush(vapidPublicKey).catch((error: unknown) => {
+      setMessage(`No se pudo activar: ${error instanceof Error ? error.message : String(error)}`)
+      return null
+    })
+    setSubscribed(await isSubscribed())
+    if (!result) return
     setMessage(
       result === 'ok'
         ? 'Notificaciones activadas en este dispositivo.'
         : result === 'denied'
           ? 'Has bloqueado las notificaciones en los ajustes del navegador.'
           : 'Este navegador no admite notificaciones.',
+    )
+  }
+
+  async function test(): Promise<void> {
+    const result = await api
+      .post<{ sent: number; enabled: boolean }>('/api/push/test')
+      .catch(() => null)
+    setMessage(
+      !result
+        ? 'No se pudo contactar con el servidor.'
+        : !result.enabled
+          ? 'El servidor no tiene configuradas las claves VAPID.'
+          : result.sent === 0
+            ? 'Ningún dispositivo del hogar aceptó el aviso. Desactiva y vuelve a activar.'
+            : `Enviada a ${result.sent} ${result.sent === 1 ? 'dispositivo' : 'dispositivos'}.`,
     )
   }
 
@@ -401,17 +428,17 @@ function NotificationsScreen() {
       </div>
 
       <div className="card col">
-        {state === 'granted' ? (
+        {subscribed ? (
           <>
             <p className="small">Activadas en este dispositivo.</p>
-            <button className="btn ghost" onClick={() => void api.post('/api/push/test')}>
+            <button className="btn ghost" onClick={() => void test()}>
               <Bell size={17} /> Enviar notificación de prueba
             </button>
             <button
               className="btn ghost"
               onClick={async () => {
                 await disablePush()
-                setState(permission())
+                setSubscribed(false)
               }}
             >
               Desactivar en este dispositivo
