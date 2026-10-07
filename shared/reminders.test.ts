@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BabyEvent, EventType } from './events.js'
-import { defaultFeedIntervalMinutes, defaultSettings, evaluateReminders } from './reminders.js'
+import { dailySummaryKey, defaultFeedIntervalMinutes, defaultSettings, evaluateReminders } from './reminders.js'
 
 const NOW = Date.parse('2026-08-30T12:00:00.000Z')
 
@@ -110,5 +110,32 @@ describe('evaluateReminders', () => {
       feed: { enabled: false, thresholdMinutes: 180 },
     })
     expect(due.map((item) => item.type)).not.toContain('feed')
+  })
+})
+
+describe('dailySummaryKey', () => {
+  const madrid = (iso: string) => Date.parse(iso)
+
+  it('is due at the configured local time, not UTC', () => {
+    // 06:40 UTC is 08:40 in Madrid in October.
+    expect(dailySummaryKey('08:40', madrid('2026-10-07T06:40:10Z'), 'Europe/Madrid')).toBe('2026-10-07@08:40')
+    expect(dailySummaryKey('06:40', madrid('2026-10-07T06:40:10Z'), 'Europe/Madrid')).toBeNull()
+  })
+
+  it('still fires if the tick lands a few minutes late, but not much later', () => {
+    expect(dailySummaryKey('08:40', madrid('2026-10-07T06:42:59Z'), 'Europe/Madrid')).toBe('2026-10-07@08:40')
+    expect(dailySummaryKey('08:40', madrid('2026-10-07T06:55:00Z'), 'Europe/Madrid')).toBeNull()
+    expect(dailySummaryKey('08:40', madrid('2026-10-07T06:39:00Z'), 'Europe/Madrid')).toBeNull()
+  })
+
+  it('gives a new key when the time moves, so a second summary the same day goes out', () => {
+    const first = dailySummaryKey('07:30', madrid('2026-10-07T05:30:00Z'), 'Europe/Madrid')
+    const second = dailySummaryKey('08:40', madrid('2026-10-07T06:40:00Z'), 'Europe/Madrid')
+    expect(first).not.toBe(second)
+  })
+
+  it('keeps the day it was due on across midnight', () => {
+    // 22:02 UTC is 00:02 on the 8th in Madrid; the 23:55 summary belongs to the 7th.
+    expect(dailySummaryKey('23:55', madrid('2026-10-07T22:02:00Z'), 'Europe/Madrid')).toBe('2026-10-07@23:55')
   })
 })

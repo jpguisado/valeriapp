@@ -3,7 +3,7 @@
  * Shared so the settings screen and the server scheduler can never disagree.
  */
 import { firstSideOf, payloadOf, type BabyEvent } from './events.js'
-import { ageInMonths, toInstant, type DayKey } from './time.js'
+import { ageInMonths, dayKeyOf, toInstant, zonedParts, type DayKey } from './time.js'
 
 export const REMINDER_TYPES = [
   'feed',
@@ -113,6 +113,24 @@ function humanMinutes(minutes: number): string {
  * Pure evaluation: which reminders are due right now for one baby.
  * Delivery, deduplication and quiet hours are the caller's business.
  */
+/** A tick can land a minute late; the summary still goes out within this window. */
+const DAILY_SUMMARY_WINDOW_MINUTES = 10
+
+/**
+ * Key of the daily summary due at `now`, or null if it isn't time. The key
+ * carries the configured time, so moving the time to later the same day
+ * schedules a new summary instead of being swallowed by the one already sent.
+ */
+export function dailySummaryKey(atTime: string, now: number, timezone: string): string | null {
+  const [hour = 22, minute = 0] = atTime.split(':').map(Number)
+  const local = zonedParts(now, timezone)
+  const minutesLate = (local.hour * 60 + local.minute - (hour * 60 + minute) + 1440) % 1440
+  if (minutesLate >= DAILY_SUMMARY_WINDOW_MINUTES) return null
+  // The day it was due on, which differs from today's if it was due at 23:55.
+  const day = dayKeyOf(now - minutesLate * 60_000, timezone)
+  return `${day}@${atTime}`
+}
+
 export function evaluateReminders(input: EvaluateInput): DueReminder[] {
   const { babyName, birthDate, events, settings, now } = input
   const due: DueReminder[] = []

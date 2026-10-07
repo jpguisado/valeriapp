@@ -3,8 +3,8 @@
  * closes forgotten timers, fires due reminders, and runs the backup job.
  */
 import { and, eq } from 'drizzle-orm'
-import { defaultSettings, evaluateReminders, REMINDER_TYPES, type ReminderSettings, type ReminderType } from '../../shared/reminders.js'
-import { ageInMonths, dayKeyOf, zonedParts } from '../../shared/time.js'
+import { dailySummaryKey, defaultSettings, evaluateReminders, REMINDER_TYPES, type ReminderSettings, type ReminderType } from '../../shared/reminders.js'
+import { ageInMonths, dayKeyOf } from '../../shared/time.js'
 import { summarise } from '../../shared/stats.js'
 import { db } from '../db/client.js'
 import { babies, households, reminderSettings, reminderState } from '../db/schema.js'
@@ -90,12 +90,11 @@ async function maybeSendDailySummary(
 ): Promise<void> {
   const config = settings.daily_summary
   if (!config?.enabled) return
-  const [hour, minute] = (config.atTime ?? '22:00').split(':').map(Number)
-  const local = zonedParts(now, householdTimezone)
-  if (local.hour !== (hour ?? 22) || local.minute !== (minute ?? 0)) return
+  const key = dailySummaryKey(config.atTime ?? '22:00', now, householdTimezone)
+  if (!key) return
+  if (await alreadyFired(baby.id, 'daily_summary', key)) return
 
   const today = dayKeyOf(now, householdTimezone)
-  if (await alreadyFired(baby.id, 'daily_summary', today)) return
 
   const summary = summarise(events, today, today, {
     timezone: { mode: 'device', fixed: householdTimezone },
@@ -111,7 +110,7 @@ async function maybeSendDailySummary(
     firedAt: new Date(now).toISOString(),
     maxLateMinutes: env.PUSH_MAX_LATE_MINUTES,
   })
-  await rememberFiring(baby.id, 'daily_summary', today)
+  await rememberFiring(baby.id, 'daily_summary', key)
 }
 
 export async function tick(now = Date.now()): Promise<void> {
