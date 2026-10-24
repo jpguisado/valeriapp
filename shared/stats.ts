@@ -63,6 +63,8 @@ export interface DailyStats {
   /** La misma leche (biberones y suplementos) según su origen. */
   breastmilkMl: number
   formulaMl: number
+  /** Registros antiguos "mixta": se sabe cuánta leche, no de qué tipo. */
+  unknownMilkMl: number
   pumpMl: number
   pumpSessions: number
   breastSeconds: number
@@ -106,6 +108,7 @@ export interface PeriodSummary {
     supplementMl: number
     breastmilkMl: number
     formulaMl: number
+    unknownMilkMl: number
     pumpMl: number
     breastSeconds: number
     leftSeconds: number
@@ -160,6 +163,7 @@ function emptyDay(dayKey: DayKey): DailyStats {
     supplementMl: 0,
     breastmilkMl: 0,
     formulaMl: 0,
+    unknownMilkMl: 0,
     pumpMl: 0,
     pumpSessions: 0,
     breastSeconds: 0,
@@ -322,6 +326,7 @@ export function computeDailyStats(
           day.supplementMl += milkTotal(milk)
           day.breastmilkMl += milk.breastmilkMl
           day.formulaMl += milk.formulaMl
+          day.unknownMilkMl += milk.unknownMl
           if (event.estimated) day.hasEstimates = true
         }
         break
@@ -335,6 +340,7 @@ export function computeDailyStats(
           const milk = milkOf(event)
           day.breastmilkMl += milk.breastmilkMl
           day.formulaMl += milk.formulaMl
+          day.unknownMilkMl += milk.unknownMl
         }
         break
       }
@@ -497,6 +503,7 @@ export function summarise(
     supplementMl: sum(daily, (d) => d.supplementMl),
     breastmilkMl: sum(daily, (d) => d.breastmilkMl),
     formulaMl: sum(daily, (d) => d.formulaMl),
+    unknownMilkMl: sum(daily, (d) => d.unknownMilkMl),
     pumpMl: sum(daily, (d) => d.pumpMl),
     breastSeconds: sum(daily, (d) => d.breastSeconds),
     leftSeconds: sum(daily, (d) => d.leftSeconds),

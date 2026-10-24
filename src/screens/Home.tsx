@@ -17,7 +17,7 @@ import { SyncBadge } from '@/components/SyncBadge'
 import { Timeline } from '@/components/Timeline'
 import { TypePicker, type PickMode } from '@/components/TypePicker'
 import { Plus } from '@/components/icons'
-import { babyAge, longDate } from '@/lib/format'
+import { babyAgeDetailed, longDate } from '@/lib/format'
 import { useEvents, useNow } from '@/lib/hooks'
 import { Link } from '@/lib/router'
 import { useSession } from '@/lib/session'
@@ -93,7 +93,7 @@ export function Home() {
       <PageHeader
         eyebrow={longDate(now, timezone.fixed)}
         title={baby?.name ?? 'Hoy'}
-        subtitle={baby ? babyAge(baby.birthDate, now) : undefined}
+        subtitle={baby ? babyAgeDetailed(baby.birthDate, now, timezone.fixed) : undefined}
         action={<SyncBadge />}
       />
 

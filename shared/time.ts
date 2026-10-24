@@ -229,6 +229,23 @@ export function ageInDays(birthDate: DayKey, at: Date | string | number = Date.n
   return Math.max(0, diffDays(birthDate, dayKeyOf(at, tz)))
 }
 
+/**
+ * La edad como se cuenta en casa: meses cumplidos de calendario (del 12 al 12),
+ * y lo que sobra en semanas y días.
+ */
+export function ageParts(
+  birthDate: DayKey,
+  today: DayKey,
+): { months: number; weeks: number; days: number } {
+  if (diffDays(birthDate, today) <= 0) return { months: 0, weeks: 0, days: 0 }
+  const birth = parseDayKey(birthDate)
+  const now = parseDayKey(today)
+  let months = (now.year - birth.year) * 12 + (now.month - birth.month)
+  if (diffDays(addMonths(birthDate, months), today) < 0) months -= 1
+  const rest = diffDays(addMonths(birthDate, months), today)
+  return { months, weeks: Math.floor(rest / 7), days: rest % 7 }
+}
+
 export function ageInMonths(birthDate: DayKey, at: Date | string | number = Date.now()): number {
   return Math.floor(ageInDays(birthDate, at) / 30.4375)
 }

@@ -1,5 +1,5 @@
 import { EVENT_LABELS, type BabyEvent, type MilkSplit } from '@shared/events'
-import { dayKeyOf, zonedParts, type DayKey } from '@shared/time'
+import { ageParts, dayKeyOf, zonedParts, type DayKey } from '@shared/time'
 
 export function pad(value: number): string {
   return String(value).padStart(2, '0')
@@ -140,6 +140,19 @@ export function describeMilk(milk: MilkSplit): string {
 
 export function eventTitle(event: BabyEvent): string {
   return EVENT_LABELS[event.type]
+}
+
+/** "2 meses, 1 semana y 3 días": la edad completa, para la portada. */
+export function babyAgeDetailed(birthDate: DayKey, now: number, tz: string): string {
+  const { months, weeks, days } = ageParts(birthDate, dayKeyOf(now, tz))
+  const parts = [
+    months > 0 ? (months === 1 ? '1 mes' : `${months} meses`) : null,
+    weeks > 0 ? (weeks === 1 ? '1 semana' : `${weeks} semanas`) : null,
+    days > 0 ? (days === 1 ? '1 día' : `${days} días`) : null,
+  ].filter((part): part is string => part !== null)
+  if (parts.length === 0) return '0 días'
+  if (parts.length === 1) return parts[0] as string
+  return `${parts.slice(0, -1).join(', ')} y ${parts.at(-1)}`
 }
 
 export function babyAge(birthDate: DayKey, now: number = Date.now()): string {

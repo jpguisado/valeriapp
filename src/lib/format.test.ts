@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { duration, hours, liveDuration, rangeLabel } from './format'
+import { babyAgeDetailed, duration, hours, liveDuration, rangeLabel } from './format'
 
 describe('liveDuration', () => {
   it('counts seconds while the session is short', () => {
@@ -42,5 +42,30 @@ describe('rangeLabel', () => {
 
   it('añade los años cuando cruza de año', () => {
     expect(rangeLabel('2026-12-28', '2027-01-03')).toBe('28 dic 2026 – 3 ene 2027')
+  })
+})
+
+describe('babyAgeDetailed', () => {
+  const at = (iso: string) => Date.parse(iso)
+  const tz = 'Europe/Madrid'
+
+  it('cuenta meses de calendario y lo que sobra en semanas y días', () => {
+    expect(babyAgeDetailed('2026-08-12', at('2026-10-24T10:00:00Z'), tz)).toBe('2 meses, 1 semana y 5 días')
+  })
+
+  it('omite lo que vale cero', () => {
+    expect(babyAgeDetailed('2026-08-12', at('2026-10-12T10:00:00Z'), tz)).toBe('2 meses')
+    expect(babyAgeDetailed('2026-10-10', at('2026-10-24T10:00:00Z'), tz)).toBe('2 semanas')
+    expect(babyAgeDetailed('2026-10-20', at('2026-10-24T10:00:00Z'), tz)).toBe('4 días')
+    expect(babyAgeDetailed('2026-09-24', at('2026-10-25T10:00:00Z'), tz)).toBe('1 mes y 1 día')
+  })
+
+  it('no ha cumplido el mes hasta llegar al mismo día', () => {
+    expect(babyAgeDetailed('2026-09-25', at('2026-10-24T10:00:00Z'), tz)).toBe('4 semanas y 1 día')
+  })
+
+  it('usa el día local, no el UTC', () => {
+    // 00:30 en Madrid del 12 es todavía el 11 en UTC.
+    expect(babyAgeDetailed('2026-08-12', at('2026-10-11T22:30:00Z'), tz)).toBe('2 meses')
   })
 })

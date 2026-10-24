@@ -23,8 +23,8 @@ interface BarProps {
   label: string
   /** El día en curso: su barra va punteada porque aún no ha terminado. */
   partialDay?: string | null
-  /** Segunda serie apilada encima de la primera. */
-  stack?: { pick: (day: DailyStats) => number; color: string; label: string }
+  /** Series apiladas encima de la primera, de abajo arriba. */
+  stacks?: Array<{ pick: (day: DailyStats) => number; color: string; label: string }>
   /** Rótulo de la serie de abajo, cuando hay apilado. */
   baseLabel?: string
 }
@@ -38,12 +38,14 @@ export function BarChart({
   now,
   label,
   partialDay,
-  stack,
+  stacks = [],
   baseLabel,
 }: BarProps) {
   const base = days.map(pick)
-  const extra = days.map((day) => (stack ? stack.pick(day) : 0))
-  const values = base.map((value, index) => value + (extra[index] ?? 0))
+  const layers = stacks.map((stack) => days.map(stack.pick))
+  const values = base.map(
+    (value, index) => value + layers.reduce((sum, layer) => sum + (layer[index] ?? 0), 0),
+  )
   const max = Math.max(...values, 0)
   const total = values.reduce((sum, value) => sum + value, 0)
   const average = values.length ? total / values.length : 0
@@ -97,11 +99,22 @@ export function BarChart({
           <>
             <span className="strong">{dayLabel(activeDay.dayKey, tz, now)}</span>
             <span className="mono">{format(values[active as number] ?? 0)}</span>
-            {stack && (extra[active as number] ?? 0) > 0 && (
+            {stacks.length > 0 && (
               <span className="mono tiny">
-                <span style={{ color }}>{format(base[active as number] ?? 0)}</span>
-                <span className="faint"> + </span>
-                <span style={{ color: stack.color }}>{format(extra[active as number] ?? 0)}</span>
+                {[
+                  { color, value: base[active as number] ?? 0 },
+                  ...stacks.map((stack, i) => ({
+                    color: stack.color,
+                    value: layers[i]?.[active as number] ?? 0,
+                  })),
+                ]
+                  .filter((part) => part.value > 0)
+                  .map((part, i) => (
+                    <span key={part.color}>
+                      {i > 0 && <span className="faint"> + </span>}
+                      <span style={{ color: part.color }}>{format(part.value)}</span>
+                    </span>
+                  ))}
               </span>
             )}
           </>
@@ -147,15 +160,17 @@ export function BarChart({
 
         {days.map((day, index) => {
           const value = values[index] ?? 0
-          const supplement = extra[index] ?? 0
           const isToday = day.dayKey === today
           const partial = day.dayKey === partialDay
           const height = scale(value)
           const x = index * slot + (slot - barWidth) / 2
           const y = BASE - height
           /* El apilado reparte la altura ya escalada: así la suma cuadra. */
-          const extraHeight = value > 0 && supplement > 0 ? (height * supplement) / value : 0
-          const baseHeight = height - extraHeight
+          const layerHeights = layers.map((layer) => {
+            const part = layer[index] ?? 0
+            return value > 0 && part > 0 ? (height * part) / value : 0
+          })
+          const baseHeight = height - layerHeights.reduce((sum, h) => sum + h, 0)
 
           const isActive = active === index
           const resting = partial ? 0.28 : value === 0 ? 0.22 : isToday ? 0.95 : 0.5
@@ -179,19 +194,25 @@ export function BarChart({
                   strokeDasharray={partial ? '3 2' : undefined}
                 />
               )}
-              {stack && extraHeight > 0 && (
-                <rect
-                  x={x}
-                  y={y}
-                  width={barWidth}
-                  height={extraHeight}
-                  fill={stack.color}
-                  fillOpacity={isActive ? 1 : active !== null ? 0.36 : 0.9}
-                  stroke={partial ? stack.color : undefined}
-                  strokeWidth={partial ? 1.2 : undefined}
-                  strokeDasharray={partial ? '3 2' : undefined}
-                />
-              )}
+              {stacks.map((stack, i) => {
+                const layerHeight = layerHeights[i] ?? 0
+                if (layerHeight <= 0) return null
+                const below = baseHeight + layerHeights.slice(0, i).reduce((sum, h) => sum + h, 0)
+                return (
+                  <rect
+                    key={stack.label}
+                    x={x}
+                    y={BASE - below - layerHeight}
+                    width={barWidth}
+                    height={layerHeight}
+                    fill={stack.color}
+                    fillOpacity={isActive ? 1 : active !== null ? 0.36 : 0.9}
+                    stroke={partial ? stack.color : undefined}
+                    strokeWidth={partial ? 1.2 : undefined}
+                    strokeDasharray={partial ? '3 2' : undefined}
+                  />
+                )
+              })}
               {(isActive || (showValues && value > 0 && active === null)) && (
                 <text
                   x={x + barWidth / 2}
@@ -221,10 +242,14 @@ export function BarChart({
         {/* El suelo, para que las barras se apoyen en algo. */}
         <line x1="0" y1={BASE} x2={W} y2={BASE} stroke="var(--border-soft)" strokeWidth="1" />
       </svg>
-      {stack && (
+      {stacks.length > 0 && (
         <div className="chart-legend">
           <span style={{ ['--swatch' as string]: color }}>{baseLabel ?? 'Base'}</span>
-          <span style={{ ['--swatch' as string]: stack.color }}>{stack.label}</span>
+          {stacks.map((stack) => (
+            <span key={stack.label} style={{ ['--swatch' as string]: stack.color }}>
+              {stack.label}
+            </span>
+          ))}
         </div>
       )}
     </figure>

@@ -9,7 +9,7 @@ import {
 import { addDays, dayKeyOf } from '@shared/time'
 import { BarChart, ChartCard, ComparisonRow, LineChart, SleepBandChart } from '@/components/charts'
 import { EventSheet } from '@/components/EventSheet'
-import { GrowthChart, currentPercentile } from '@/components/GrowthChart'
+import { WeightChart, currentPercentile } from '@/components/GrowthChart'
 import { PageHeader } from '@/components/PageHeader'
 import { ChevronLeft, ChevronRight } from '@/components/icons'
 import { useEvents, useNow } from '@/lib/hooks'
@@ -178,21 +178,30 @@ export function Stats() {
           title="Leche"
           meta={`${ml(current.totals.bottleMl + current.totals.supplementMl)} · ${periodDays}`}
         >
+          {/* Lo que importa en la lactancia mixta es qué leche tomó, no si fue en
+              un biberón suelto o como suplemento de una toma de pecho. */}
           <BarChart
             days={daily}
-            pick={(day) => day.bottleMl}
+            pick={(day) => day.breastmilkMl}
             partialDay={range.partialDay}
-            stack={{
-              pick: (day) => day.supplementMl,
-              color: 'var(--breast)',
-              label: 'Suplemento en la toma',
-            }}
-            baseLabel="Biberón"
-            color="var(--bottle)"
+            stacks={[
+              { pick: (day) => day.formulaMl, color: 'var(--bottle)', label: 'Fórmula' },
+              ...(current.totals.unknownMilkMl > 0
+                ? [
+                    {
+                      pick: (day: (typeof daily)[number]) => day.unknownMilkMl,
+                      color: 'var(--measure)',
+                      label: 'Sin desglosar',
+                    },
+                  ]
+                : []),
+            ]}
+            baseLabel="Leche materna"
+            color="var(--breast)"
             format={(value) => `${Math.round(value)}`}
             tz={tz}
             now={now}
-            label="Mililitros de leche por día, biberón y suplemento"
+            label="Mililitros de leche por día, materna y fórmula"
           />
         </ChartCard>
       )}
@@ -324,7 +333,7 @@ export function Stats() {
                   tz={tz}
                   onAddMissing={setMissingWeighAt}
                 />
-                <GrowthChart points={weights} birthDate={baby.birthDate} sex={baby.sex} />
+                <WeightChart points={weights} birthDate={baby.birthDate} sex={baby.sex} now={now} />
                 {!baby.sex && (
                   <p className="tiny faint">
                     Indica en Ajustes si es niña o niño y aparecerá la banda de referencia de la
