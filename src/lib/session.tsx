@@ -3,7 +3,7 @@ import type { TimezoneSetting } from '@shared/time'
 import { api } from './api'
 import { resyncPush } from './push'
 import { clearLocalData } from './db'
-import { loadSnapshot, startSyncLoop, sync } from './sync'
+import { loadSnapshot, startSyncLoop, sync, syncState } from './sync'
 import type { HouseholdSnapshot } from './db'
 
 export interface SessionUser {
@@ -101,6 +101,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       refresh,
       logout: async () => {
+        // Closing the session wipes the phone; whatever has not reached the
+        // server would be lost with it.
+        await sync()
+        const unsent = syncState().pending
+        if (
+          unsent > 0 &&
+          !window.confirm(`Hay ${unsent} registros sin enviar al servidor. Si cierras sesión se perderán. ¿Cerrar sesión igualmente?`)
+        ) {
+          return
+        }
         await api.post('/api/auth/logout').catch(() => {})
         await clearLocalData()
         setUser(null)

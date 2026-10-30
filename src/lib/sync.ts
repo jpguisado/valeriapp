@@ -15,7 +15,8 @@ import { db, readMeta, writeMeta, type HouseholdSnapshot, type StoredEvent } fro
 const CURSOR_KEY = 'cursor'
 const SNAPSHOT_KEY = 'snapshot'
 const LAST_SYNC_KEY = 'lastSyncAt'
-const MAX_ATTEMPTS = 20
+/** Matches the server's per-request limit; a bigger queue goes in several rounds. */
+const BATCH_SIZE = 500
 
 export interface SyncResponse {
   serverTime: string
@@ -84,10 +85,6 @@ export async function saveEvent(event: BabyEvent): Promise<void> {
   })
   update({ pending: await db.outbox.count() })
 
-  // La cadena del modo "A dormir" se mantiene aquí, que es por donde pasa todo
-  // lo que se escribe, venga del selector, del formulario o de un temporizador.
-  const snapshot = await readMeta<HouseholdSnapshot | null>(SNAPSHOT_KEY, null)
-
   void sync()
 }
 
@@ -126,15 +123,19 @@ export function newEvent(input: {
   }
 }
 
-/** Collapses the queue to one mutation per event: the newest wins. */
-async function pendingMutations(): Promise<{ mutations: BabyEvent[]; keys: number[] }> {
+/**
+ * Collapses the queue to one mutation per event: the newest wins. A queued
+ * change is never skipped for having failed before; it stays until the server
+ * has taken it.
+ */
+async function pendingMutations(): Promise<{ mutations: BabyEvent[]; keys: Map<string, number[]> }> {
   const entries = await db.outbox.orderBy('key').toArray()
   const latest = new Map<string, BabyEvent>()
-  const keys: number[] = []
+  const keys = new Map<string, number[]>()
   for (const entry of entries) {
-    if (entry.attempts >= MAX_ATTEMPTS) continue
     latest.set(entry.eventId, entry.event)
-    if (entry.key !== undefined) keys.push(entry.key)
+    if (entry.key === undefined) continue
+    keys.set(entry.eventId, [...(keys.get(entry.eventId) ?? []), entry.key])
   }
   return { mutations: [...latest.values()], keys }
 }
@@ -169,29 +170,29 @@ async function runOnce(): Promise<void> {
   update({ status: 'syncing' })
 
   try {
-    const cursor = await readMeta<number>(CURSOR_KEY, 0)
     const { mutations, keys } = await pendingMutations()
-    const response = await api.post<SyncResponse>('/api/sync', { cursor, mutations })
+    let response: SyncResponse | null = null
+    const rejected: SyncResponse['rejected'] = []
 
-    await db.transaction('rw', db.events, db.outbox, db.meta, async () => {
-      // Only drop queue entries that were actually sent; anything queued while
-      // the request was in flight survives for the next round.
-      if (keys.length > 0) await db.outbox.bulkDelete(keys)
-      if (response.events.length > 0) await db.events.bulkPut(response.events)
-      await db.meta.put({ key: CURSOR_KEY, value: response.cursor })
-      await db.meta.put({ key: SNAPSHOT_KEY, value: response.snapshot })
-      await db.meta.put({ key: LAST_SYNC_KEY, value: response.serverTime })
-    })
+    // At least one round, even with nothing to send, to pull what others did.
+    for (let from = 0; from === 0 || from < mutations.length; from += BATCH_SIZE) {
+      const batch = mutations.slice(from, from + BATCH_SIZE)
+      const cursor = await readMeta<number>(CURSOR_KEY, 0)
+      response = await api.post<SyncResponse>('/api/sync', { cursor, mutations: batch })
+      rejected.push(...response.rejected)
+      await applyResponse(response, batch, keys)
+    }
+    if (!response) return
 
-    if (response.rejected.length > 0) {
-      console.warn('[sync] el servidor rechazó eventos', response.rejected)
+    if (rejected.length > 0) {
+      console.warn('[sync] el servidor rechazó eventos', rejected)
     }
 
     update({
       status: 'idle',
       pending: await db.outbox.count(),
       lastSyncAt: response.serverTime,
-      lastError: response.rejected[0]?.reason ?? null,
+      lastError: rejected[0]?.reason ?? null,
       clockSkewMs: Date.parse(response.serverTime) - Date.now(),
     })
   } catch (error) {
@@ -202,6 +203,43 @@ async function runOnce(): Promise<void> {
       update({ status: 'error', lastError: (error as Error).message, pending: await db.outbox.count() })
     }
   }
+}
+
+async function applyResponse(
+  response: SyncResponse,
+  sent: BabyEvent[],
+  keys: Map<string, number[]>,
+): Promise<void> {
+  const refused = new Set(response.rejected.map((item) => item.id))
+  const reasons = new Map(response.rejected.map((item) => [item.id, item.reason]))
+
+  await db.transaction('rw', db.events, db.outbox, db.meta, async () => {
+    // Only drop queue entries the server actually took. A rejected event stays
+    // queued: dropping it would leave it on this phone alone, for good.
+    const taken: number[] = []
+    for (const event of sent) {
+      const eventKeys = keys.get(event.id) ?? []
+      if (refused.has(event.id)) {
+        for (const key of eventKeys) {
+          const entry = await db.outbox.get(key)
+          if (entry) await db.outbox.update(key, { attempts: entry.attempts + 1, lastError: reasons.get(event.id) })
+        }
+      } else {
+        taken.push(...eventKeys)
+      }
+    }
+    if (taken.length > 0) await db.outbox.bulkDelete(taken)
+
+    // What is still queued is newer than whatever the server sends back for
+    // it, so the server copy must not overwrite it.
+    const stillQueued = new Set((await db.outbox.toArray()).map((entry) => entry.eventId))
+    const incoming = response.events.filter((event) => !stillQueued.has(event.id))
+    if (incoming.length > 0) await db.events.bulkPut(incoming)
+
+    await db.meta.put({ key: CURSOR_KEY, value: response.cursor })
+    await db.meta.put({ key: SNAPSHOT_KEY, value: response.snapshot })
+    await db.meta.put({ key: LAST_SYNC_KEY, value: response.serverTime })
+  })
 }
 
 async function noteFailure(message: string): Promise<void> {
