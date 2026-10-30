@@ -111,6 +111,73 @@ describe('outbox', () => {
     expect(await db.outbox.count()).toBe(1)
   })
 
+  it('keeps an event the server rejected instead of dropping it', async () => {
+    const event = make()
+    await saveEvent(event)
+    await settle()
+    respondWith({ ...emptyResponse(3), rejected: [{ id: event.id, reason: 'Bebé desconocido para este hogar' }] })
+    await sync()
+    const [entry] = await db.outbox.toArray()
+    expect(entry).toMatchObject({ eventId: event.id, attempts: 1, lastError: 'Bebé desconocido para este hogar' })
+    expect(await db.events.get(event.id)).toBeTruthy()
+  })
+
+  it('never gives up on queued events after repeated failures', async () => {
+    const event = make()
+    await saveEvent(event)
+    await settle()
+    for (let i = 0; i < 25; i += 1) {
+      respondWith({ error: 'boom' }, false)
+      await sync()
+    }
+    let sent: BabyEvent[] = []
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      sent = JSON.parse(String((init as RequestInit).body)).mutations as BabyEvent[]
+      return new Response(JSON.stringify(emptyResponse(1)), { status: 200 })
+    }) as unknown as typeof fetch
+    await sync()
+    expect(sent.map((item) => item.id)).toEqual([event.id])
+    expect(await db.outbox.count()).toBe(0)
+  })
+
+  it('does not overwrite an edit made while the request was in flight', async () => {
+    const event = make({ note: 'viejo' })
+    await saveEvent(event)
+    await settle()
+    await saveEvent({ ...event, note: 'viejo otra vez' })
+    globalThis.fetch = vi.fn(async () => {
+      // The user edits again while the server is still answering.
+      await db.outbox.add({
+        eventId: event.id,
+        event: { ...event, note: 'editado mientras tanto' },
+        queuedAt: new Date().toISOString(),
+        attempts: 0,
+      })
+      await db.events.put({ ...event, note: 'editado mientras tanto' })
+      return new Response(JSON.stringify(emptyResponse(9, [{ ...event, note: 'viejo otra vez' }])), {
+        status: 200,
+      })
+    }) as unknown as typeof fetch
+    await sync()
+    expect(await db.events.get(event.id)).toMatchObject({ note: 'editado mientras tanto' })
+    expect(await db.outbox.count()).toBe(1)
+  })
+
+  it('sends a long queue in batches the server accepts', async () => {
+    for (let i = 0; i < 1200; i += 1) {
+      const event = make()
+      await db.outbox.add({ eventId: event.id, event, queuedAt: new Date().toISOString(), attempts: 0 })
+    }
+    const sizes: number[] = []
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      sizes.push((JSON.parse(String((init as RequestInit).body)).mutations as unknown[]).length)
+      return new Response(JSON.stringify(emptyResponse(1)), { status: 200 })
+    }) as unknown as typeof fetch
+    await sync()
+    expect(sizes).toEqual([500, 500, 200])
+    expect(await db.outbox.count()).toBe(0)
+  })
+
   it('marks a deletion as a normal mutation instead of dropping the row', async () => {
     const event = make()
     await saveEvent(event)
